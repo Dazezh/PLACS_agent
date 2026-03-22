@@ -1,0 +1,12 @@
+PyQt5
+requests
+pythonping
+pytz
+tzlocal
+python-slugify
+mss
+Pillow
+keyboard
+playsound
+psutil
+wmi

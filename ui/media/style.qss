@@ -1,0 +1,435 @@
+/* style.qss */
+
+/* Общие стили для всех виджетов */
+QWidget {
+    background-color: #262626; /* Темный фон */
+    color: #e0e0e0; /* Светлый текст */
+    font-family: "Inter", sans-serif; /* Используем Inter, если доступен */
+    font-size: 14px;
+}
+
+QWidget#LeftPane {
+    background-color: #2e2e2e;
+    border-right: 1px solid #444;
+}
+
+QWidget#LeftPaneNoBG {
+    background-color: #2e2e2e;
+}
+
+QToolBar {
+    background-color: #2e2e2e;
+    padding: 1px;
+}
+
+QToolBar QPushButton {
+    background-color: #2e2e2e; /* Темный фон */
+    color: white; /* Белый текст */
+    border: 0;
+    border-radius: 0px;
+    border-right: 1px solid #444; /* Светлая рамка справа */
+    border-left: 1px solid #444; /* Светлая рамка справа */
+    padding: 5px 10px; /* Отступы внутри кнопки */
+    min-width: 20px; /* Минимальная ширина */
+    font-size: 12px;
+}
+
+QToolBar QPushButton:hover {
+    background-color: #242424; /* Темный фон */
+}
+
+QToolBar QPushButton:pressed {
+    background-color: #181818; /* Темный фон */
+    border: 0;
+}
+
+/* Стили для статусбара */
+QLabel#StatusBarIndicator {
+    background-color: transparent; /* Делаем фон полностью прозрачным */
+    padding: 0px;                /* Убираем внутренние отступы */
+    border: none;                /* Убираем любые рамки */
+    margin: 0px 3px;             /* Добавляем микро-отступ по бокам для красоты */
+}
+
+/* Стили для кнопок */
+QPushButton {
+    background-color: #af604c; /* Кирпичная кнопка */
+    color: white;
+    border: 1px solid #9c5544;
+    border-radius: 8px; /* Скругленные углы */
+    padding: 8px 15px;
+    min-width: 80px;
+}
+
+QPushButton:hover {
+    background-color: #9c5544; /* Темнее при наведении */
+}
+
+QPushButton:pressed {
+    background-color: #7a4436; /* Еще темнее при нажатии */
+    border: 1px solid #6d3d31;
+}
+
+/* Стили для полей ввода */
+QLineEdit {
+    background-color: #3a3a3a;
+    border: 1px solid #555555;
+    border-radius: 5px;
+    padding: 5px;
+    color: #e0e0e0;
+}
+
+QSpinBox  {
+    background-color: #3a3a3a;
+    border: 1px solid #555555;
+    border-radius: 5px;
+    padding: 5px;
+    color: #e0e0e0;
+}
+
+QComboBox {
+    background-color: #3a3a3a;
+    border: 1px solid #555555;
+    border-radius: 5px;
+    padding: 5px;
+    color: #e0e0e0;
+}
+
+QCheckBox::indicator {
+    width: 20px;
+    height: 20px;
+}
+
+QLineEdit:focus {
+    border: 1px solid #6d3d31; /* Синяя рамка при фокусе */
+}
+
+/* Стили для QLabel (текстовых меток) */
+QLabel {
+    color: #e0e0e0;
+}
+
+/* Стили для QDialog (диалоговых окон) */
+QDialog {
+    border: 1px solid #555555;
+    border-radius: 10px;
+}
+
+/* Стили для QMenu (контекстного меню трея) */
+QMenu {
+    background-color: #3a3a3a;
+    border: 1px solid #555555;
+    border-radius: 5px;
+    color: #e0e0e0;
+}
+
+QMenu::item {
+    padding: 5px 20px;
+}
+
+QMenu::item:selected {
+    background-color: #4285F4; /* Синий при выделении */
+    color: white;
+    border-radius: 3px;
+}
+
+/* Стили оформления для окна загрузки и отключения */
+#loadLabel { /*  */
+    background-color: #181818; /* Тёмносерый фон */
+    border-radius: 10px; /* Скругленные края */
+    padding: 15px;
+    max-height: 60px;
+    margin-bottom: 10px;
+    color: white;
+}
+
+#exitLabel {
+    padding: 5px;
+    font-size: 32px;
+    margin-bottom: 3px;
+    color: #dfdfdf;
+}
+
+#exitReason {
+    font-size: 15px;
+    margin-bottom: 10px;
+    font-weight: normal;
+    color: #cfcfcf;
+}
+
+#needLabel { /*  */
+    background-color: #1f1f1f; /* Серый фон */
+    border-radius: 10px; /* Скругленные края */
+    padding: 15px;
+    margin-bottom: 10px;
+    color: white;
+}
+
+/* ---------------- VPN UI ---------------- */
+#VpnUpdatingLabel {
+    background: transparent;
+    border-radius: 10px;
+    padding: 12px 18px;
+    margin: 0 0 10px 0;
+    color: #ffffff;
+}
+
+#VpnHeader {
+    background-color: #1f1f1f;
+    border-radius: 10px;
+    padding: 12px 18px;
+    margin: 0 0 10px 0;
+    color: #ffffff;
+}
+
+#VpnStatusLabel {
+    background-color: #262626;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 10px;
+    font-size: 13px;
+    color: #cfcfcf;
+}
+
+#VpnScrollArea {
+    background-color: #262626;
+    border: 1px solid #444;
+    border-radius: 8px;
+}
+
+QListWidget#VpnConfigList {
+    background-color: #262626;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 5px;
+    color: #e0e0e0;
+}
+
+QWidget#VpnItem {
+    background-color: #262626;
+    border: 1px solid #444;
+    border-radius: 10px;
+}
+QWidget#VpnItem:hover {
+    background-color: #2f2f2f;
+}
+
+QWidget#VpnItem * {
+    background-color: transparent; /* Делаем фон всех вложенных виджетов прозрачным */
+}
+
+QPushButton#VpnConnectButton {
+    background-color: #4c6faf; /* Синеватый акцент */
+    border: 1px solid #3e5b8f;
+    border-radius: 8px;
+    padding: 6px 14px;
+    color: #ffffff;
+    font-size: 13px;
+}
+QPushButton#VpnConnectButton:hover {
+    background-color: #3e5b8f;
+}
+QPushButton#VpnConnectButton:pressed {
+    background-color: #2d4465;
+}
+
+QPushButton#VpnDisconnectButton {
+    background-color: #af604c; /* Используем основной кирпичный цвет */
+    border: 1px solid #9c5544;
+    border-radius: 8px;
+    padding: 8px 18px;
+    color: #ffffff;
+    font-size: 13px;
+    margin-top: 5px;
+}
+QPushButton#VpnDisconnectButton:hover {
+    background-color: #9c5544;
+}
+QPushButton#VpnDisconnectButton:pressed {
+    background-color: #7a4436;
+}
+
+/* Общие стили для всех лейблов состояний */
+QLabel[objectName^="currentStateLabel"],
+QLabel[objectName^="currentActivityLabel"],
+QLabel[objectName^="recentActivityLabel"],
+QLabel[objectName^="lastErrorLabel"] {
+    border-radius: 10px; /* Скругленные края */
+    padding: 15px;
+    margin-bottom: 10px;
+    height: 505px;
+    color: white;
+}
+
+/* Стиль для главного виджета диагностики */
+QWidget#DiagnosticWidget {
+    color: #E0E0E0; /* Светлый текст */
+}
+
+/* Заголовок диагностики */
+QLabel#DiagnosticHeader {
+    color: #ffffff; /* Золотой цвет для заголовка */
+    background-color: #1A1A1A;
+    font-size: 30px;
+    font-weight: bold;
+    padding-right: 20px;
+}
+
+QLabel#DiagnosticImage {
+    background-color: #1A1A1A;
+}
+
+QWidget#DiagnosticNaleAndLable {
+    background-color: #1A1A1A; /* Тёмносерый фон */
+    border-radius: 10px; /* Скругленные края */
+    min-height: 140px;
+}
+
+/* Информационный текст под картинкой */
+QLabel#DiagnosticInfoLabel {
+    color: #e4e4e4;
+    font-size: 12px;
+    margin-bottom: 5px;
+}
+
+/* Список проверок */
+QLabel#DiagnosticChecklist {
+    background-color: #222222;
+    border: 1px solid #555555;
+    border-radius: 5px;
+    padding: 10px;
+    min-height: 100px; /* Минимальная высота для списка */
+    vertical-align: top; /* Выравнивание текста сверху */
+}
+
+/* Заголовок подробного результата */
+QLabel#DiagnosticDetailHeader {
+    color: #ADD8E6; /* Светло-голубой */
+    font-size: 20px;
+    font-weight: bold;
+    padding-top: 5px;
+    padding-bottom: 5px;
+}
+
+/* Подробный вывод текста */
+QTextEdit#DiagnosticDetailOutput {
+    background-color: #1A1A1A;
+    border: 1px solid #444444;
+    border-radius: 5px;
+    color: #83dd83; /* Ярко-зеленый текст для вывода логов */
+    padding: 8px;
+    font-family: "Consolas", "Monospace"; /* Моноширинный шрифт */
+    font-size: 14px;
+}
+
+/* Кнопки на экране диагностики */
+QPushButton#FixButton,
+QPushButton#RestartDiagnosticButton,
+QPushButton#BackButton {
+    background-color: #555555;
+    color: #FFFFFF;
+    border: none;
+    padding: 8px 15px;
+    border-radius: 5px;
+    font-size: 12px;
+    min-width: 120px;
+}
+
+QPushButton#FixButton:hover,
+QPushButton#RestartDiagnosticButton:hover,
+QPushButton#BackButton:hover {
+    background-color: #666666;
+}
+
+QPushButton#FixButton:pressed,
+QPushButton#RestartDiagnosticButton:pressed,
+QPushButton#BackButton:pressed {
+    background-color: #444444;
+}
+
+/* Деактивированные кнопки */
+QPushButton:disabled {
+    background-color: #383838;
+    color: #999999;
+}
+
+/* Меню настроек */
+
+QPushButton#ProceedButton {
+    background-color: #9d2929; /* Темно-красный */
+    color: white;
+    border: 1px solid #7a2020;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: bold;
+    margin-top: 5px;
+}
+QPushButton#ProceedButton:hover {
+    background-color: #b53030;
+}
+QPushButton#ProceedButton:pressed {
+    background-color: #7a2020;
+}
+
+/* Стили для кнопки проверки сервера */
+QPushButton#CheckServerButton {
+    background-color: #5a5a5a; /* Темно-серый */
+    color: white;
+    border: 1px solid #777;
+    border-radius: 5px;
+    padding: 5px 10px;
+}
+QPushButton#CheckServerButton:hover {
+    background-color: #6a6a6a;
+}
+QPushButton#CheckServerButton:pressed {
+    background-color: #4a4a4a;
+}
+
+/* Стили для статуса проверки сервера */
+QLabel#ServerCheckStatusLabel {
+    color: #cccccc; /* Светло-серый по умолчанию */
+    font-size: 12px;
+}
+
+/* Успех - зеленый */
+QLabel#ServerCheckStatusLabel[status="success"] { color: #4CAF50; } 
+
+/* Ошибка - красный */
+QLabel#ServerCheckStatusLabel[status="error"] { color: #F44336; }
+
+/* Идёт проверка - желтый */
+QLabel#ServerCheckStatusLabel[status="checking"] { color: #FFC107; }
+
+/* Прервано - информационный синий */
+QLabel#ServerCheckStatusLabel[status="aborted"] { color: #5DADE2; }
+
+/* Стили для навигационного списка слева */
+QListWidget#NavList {
+    border: 1px solid #444;
+    background-color: #262626; /* Немного темнее основного фона */
+    outline: 0; /* Убирает рамку фокуса */
+}
+
+/* Стили для элементов списка */
+QListWidget#NavList::item {
+    padding: 12px;
+    border-bottom: 1px solid #444;
+    color: #e0e0e0;
+}
+
+/* Стиль для выбранного элемента */
+QListWidget#NavList::item:selected {
+    background-color: #af604c; /* Фирменный кирпичный цвет */
+    color: white;
+    border-left: 3px solid #ff8c70; /* Яркий акцент */
+}
+
+/* Стиль для надписи о необходимости перезапуска */
+QLabel#RestartLabel {
+    color: #ffcc00; /* Золотистый/желтый для привлечения внимания */
+    font-size: 11px;
+    font-style: italic;
+}

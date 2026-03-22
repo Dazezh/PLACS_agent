@@ -1,0 +1,668 @@
+import os
+
+from PyQt5.QtWidgets import (QDialog, QWidget, QHBoxLayout, QVBoxLayout, QListWidget, 
+                             QStackedWidget, QDialogButtonBox, QCheckBox, QSpinBox, 
+                             QComboBox, QLabel, QFormLayout, QMessageBox, QLineEdit,
+                             QPushButton, QFileDialog, QTextEdit)
+from PyQt5.QtGui import QPixmap
+from PyQt5.QtCore import Qt, QSettings, QCoreApplication
+
+from core.config_manager import get_agent_token, get_polling_interval, get_server_url, load_config, save_config, get_debug_state
+
+from core.logger import set_global_log_level
+
+from core.utils import is_linux
+
+from urllib.parse import urlparse
+
+# Это для проверки соединения
+from workers.server_communicator import get_me
+from core.error_types import ErrorType
+
+import logging
+
+class ConfigDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Привязка агента PLACS")
+        self.setFixedSize(400, 380) # Увеличиваем высоту окна
+
+        self.server_url = ""
+        self.auth_token = ""
+
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+
+        icon_path = 'ui/media/img/icons_png/PLACS_ICON_SERVER.png'
+        
+        try:
+            pixmap = QPixmap(icon_path)
+            if not pixmap.isNull():
+                scaled_pixmap = pixmap.scaled(150, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                icon_label = QLabel()
+                icon_label.setPixmap(scaled_pixmap)
+                icon_label.setAlignment(Qt.AlignCenter)
+                layout.addWidget(icon_label)
+            else:
+                print(f"Ошибка: Не удалось загрузить изображение '{icon_path}'. Проверьте путь и формат.")
+        except Exception as e:
+            print(f"Исключение при загрузке иконки в ConfigDialog: {e}")
+
+        title_label = QLabel("<h3>«Привязка» к серверу PLACS</h3>")
+        title_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title_label)
+
+        layout.addSpacing(20)
+
+        server_layout = QHBoxLayout()
+        server_layout.addWidget(QLabel("Адрес сервера PLACS:"))
+        self.server_input = QLineEdit()
+        self.server_input.setPlaceholderText("Например: https://example.com")
+        server_layout.addWidget(self.server_input)
+        layout.addLayout(server_layout)
+
+        token_layout = QHBoxLayout()
+        token_layout.addWidget(QLabel("Токен клиента (X-Auth-Token):"))
+        self.token_input = QLineEdit()
+        self.token_input.setPlaceholderText("Например: a1b2c3d4e5f6...")
+        token_layout.addWidget(self.token_input)
+        layout.addLayout(token_layout)
+
+        polling_layout = QHBoxLayout()
+        polling_layout.addWidget(QLabel("Интервал опроса (Сек.):"))
+        self.polling_interval_spinbox = QSpinBox(self)
+        self.polling_interval_spinbox.setRange(1, 300)
+        self.polling_interval_spinbox.setSingleStep(1)
+        self.polling_interval_spinbox.setValue(5)
+        polling_layout.addWidget(self.polling_interval_spinbox)
+        layout.addLayout(polling_layout)
+
+        # Загружаю текущие настройки
+        if load_config():
+            self.server_input.setPlaceholderText(f"Сейчас: {get_server_url()}")
+            self.token_input.setPlaceholderText(f"Сейчас: {get_agent_token()[:12]}...")
+            self.polling_interval_spinbox.setValue(get_polling_interval())
+
+        button_layout = QHBoxLayout()
+        self.save_button = QPushButton("Сохранить и запустить")
+        self.save_button.clicked.connect(self.accept_config)
+        button_layout.addWidget(self.save_button)
+
+        self.cancel_button = QPushButton("Отмена")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+        layout.addLayout(button_layout)
+
+        self.setLayout(layout)
+
+    def accept_config(self):
+        self.server_url = self.server_input.text().strip()
+        self.auth_token = self.token_input.text().strip()
+        self.polling_interval = self.polling_interval_spinbox.value()
+
+        if load_config():
+            self.server_url = self.server_url if self.server_url else get_server_url()
+            self.auth_token = self.auth_token if self.auth_token else get_agent_token()
+
+        if not self.server_url or not self.auth_token:
+            QMessageBox.warning(self, "Ошибка", "Пожалуйста, заполните оба поля: адрес сервера и токен.")
+            return
+
+        # --- Добавлена проверка URL ---
+        parsed_url = urlparse(self.server_url)
+        is_valid_url = all([parsed_url.scheme, parsed_url.netloc])
+        is_https = parsed_url.scheme.lower() == 'https'
+
+        if not is_valid_url:
+            QMessageBox.critical(self, "Ошибка", "Введён некорректный адрес сервера. Пожалуйста, убедитесь, что это полная ссылка (например, https://example.com).")
+            return
+
+        if not is_https and not self.server_url == get_server_url():
+            reply = QMessageBox.question(
+                self,
+                "Предупреждение безопасности",
+                "Вы ввели адрес без HTTPS. Это небезопасно и может привести к перехвату данных.\n\nВы уверены, что хотите продолжить?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply == QMessageBox.No:
+                return
+        # --- Конец проверки URL ---
+
+        QMessageBox.information(self, "Применяю...", "Настройки будут применены после сохранения.")
+        self.accept()
+
+class ClientSettingsDialog(QDialog):
+    """
+    Обновленное диалоговое окно настроек с обзорной панелью и 
+    дополнительными настройками из предоставленного файла.
+    """
+    SettingsSaved = QDialog.Accepted       # Просто сохранено, значение = 1
+    RestartRequired = QDialog.Accepted + 1 # Сохранено и нужен перезапуск, значение = 2
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Настройки Агента")
+        self.setFixedSize(750, 480)
+
+        self.settings = QSettings("PLACS", "Agent")
+        self.restart_required_flag = False
+
+        self.init_ui()
+        self.load_settings()
+        self.connect_signals()
+        
+        # Запускаем с первой страницы (Обзор)
+        self.nav_list.setCurrentRow(0)
+
+    def init_ui(self):
+        main_layout = QVBoxLayout(self)
+        content_layout = QHBoxLayout()
+        
+        self.nav_list = QListWidget()
+        self.nav_list.setObjectName("NavList")
+        self.nav_list.setFixedWidth(180)
+        
+        self.stacked_widget = QStackedWidget()
+        
+        self.create_pages()
+        
+        content_layout.addWidget(self.nav_list)
+        content_layout.addWidget(self.stacked_widget)
+        
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.button(QDialogButtonBox.Ok).setText("Применить")
+        button_box.button(QDialogButtonBox.Cancel).setText("Отмена")
+        
+        main_layout.addLayout(content_layout)
+        main_layout.addWidget(button_box)
+        
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+
+    def create_pages(self):
+        # Добавляем "Обзор" как первую страницу
+        pages = {
+            "Обзор": self.create_overview_page,
+            "Основные": self.create_general_page,
+            "Уведомления": self.create_notifications_page,
+            "Горячие клавиши": self.create_shortcuts_page,
+            "Диагностика": self.create_diagnostics_page,
+            "Логирование": self.create_logging_page,
+            "СОЕДИНЕНИЕ": self.create_server_settings_page
+        }
+        
+        for name, create_func in pages.items():
+            page = create_func()
+            self.stacked_widget.addWidget(page)
+            self.nav_list.addItem(name)
+            
+    def create_overview_page(self):
+        """Создает стартовую 'обзорную' страницу."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setAlignment(Qt.AlignCenter)
+
+        title = QLabel("<h1>Настройки клиента</h1>")
+        title.setAlignment(Qt.AlignCenter)
+        
+        # Та самая картинка для тупого пользователя
+        pixmap = QPixmap('ui/media/img/colar_man/SILLY_COLLAR_MAN.png')
+        icon_label = QLabel()
+        if not pixmap.isNull():
+            icon_label.setPixmap(pixmap.scaled(250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        icon_label.setAlignment(Qt.AlignCenter)
+        
+        description = QLabel(
+            "Здесь ты можешь настроить поведение агента PLACS.\n"
+            "Выбери интересующую тебя категорию в меню слева."
+        )
+        description.setAlignment(Qt.AlignCenter)
+        description.setWordWrap(True)
+
+        layout.addStretch()
+        layout.addWidget(title)
+        layout.addWidget(icon_label)
+        layout.addWidget(description)
+        layout.addStretch()
+        
+        return page
+    
+    def create_server_settings_page(self):
+        # Главный контейнер для этой страницы - QStackedWidget
+        page_stack = QStackedWidget()
+
+        # --- СЛОЙ 1: Предупреждение ---
+        page_warning = QWidget()
+        warning_layout = QVBoxLayout(page_warning)
+        warning_layout.setAlignment(Qt.AlignCenter)
+
+        # 1. Заголовок "Ахтунг!"
+        achtung_label = QLabel("<p style='color: #ff3333;font-size: 28px;'>Слушай сюда.<br>Это моё соединение с Сабиком.</p>")
+        achtung_label.setAlignment(Qt.AlignCenter)
+
+        # 2. Картинка Менеджера
+        manager_pixmap = QPixmap('ui/media/mascot_img/manager/MANAGER_POINTING.png') # Твой файл
+        manager_label = QLabel()
+        if not manager_pixmap.isNull():
+            manager_label.setPixmap(manager_pixmap.scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        manager_label.setAlignment(Qt.AlignCenter)
+
+        # 3. Текст предупреждения
+        warning_text_label = QLabel(
+            "<p style='color: #ff6666;font-size: 14px;'>Одно неверное движение, и он превратится в бесполезный кусок кода."
+            " И угадай, кто будет виноват? <b>Не я.</b></p>"
+        )
+        warning_text_label.setWordWrap(True)
+        warning_text_label.setAlignment(Qt.AlignCenter)
+        
+        # 4. Единственная кнопка согласия
+        proceed_button = QPushButton("Я осознаю риск и хочу продолжить")
+        proceed_button.setObjectName("ProceedButton") # Для QSS
+        # При нажатии переключаем QStackedWidget на следующий (второй) слой
+        proceed_button.clicked.connect(lambda: page_stack.setCurrentIndex(1))
+
+        # Собираем первый слой
+        warning_layout.addStretch(1)
+        warning_layout.addWidget(achtung_label)
+        warning_layout.addWidget(manager_label)
+        warning_layout.addWidget(warning_text_label)
+        warning_layout.addWidget(proceed_button)
+        warning_layout.addStretch(1)
+
+        # --- СЛОЙ 2: Сами настройки ---
+        page_settings = QWidget()
+        settings_layout = QFormLayout(page_settings)
+        settings_layout.setContentsMargins(20, 10, 20, 10)
+        
+        # Поле ввода имени сервера
+        self.server_input = QLineEdit()
+        self.server_input.setPlaceholderText("Например: https://example.com")
+
+        # Поле ввода токена
+        self.token_input = QLineEdit()
+        self.token_input.setPlaceholderText("Например: a1b2c3d4e5f6...")
+
+        # Поле ввода токена
+        self.polling_interval_spinbox = QSpinBox(self)
+        self.polling_interval_spinbox.setRange(1, 300)
+        self.polling_interval_spinbox.setSingleStep(1)
+        self.polling_interval_spinbox.setValue(5)
+        
+        self.check_server_button = QPushButton("Проверить соединение")
+        self.check_server_button.clicked.connect(self.__test_config)
+        self.check_server_button.setObjectName("CheckServerButton") # Для QSS
+        self.server_check_status_label = QLabel("<i>Статус: Не проверено</i>")
+        self.server_check_status_label.setObjectName("ServerCheckStatusLabel") # Для QSS
+        
+        check_layout = QHBoxLayout()
+        check_layout.addWidget(self.check_server_button)
+        check_layout.addWidget(self.server_check_status_label, 1)
+
+        settings_layout.addRow(QLabel("<h3>Настройки подключения к серверу</h3>"))
+
+        # Добавляем поле для адреса сервера
+        settings_layout.addRow("Адрес сервера:", self.server_input)
+        text = QLabel("<i>Настоятельно рекомендую использовать защищённое соединение (начинается с https)</p>")
+        text.setWordWrap(True)
+        settings_layout.addRow(text)
+
+        # Добавляем поле для токена Агента
+        settings_layout.addRow("Токен Сабика:", self.token_input)
+        text = QLabel("<i>Это уникальный 64-х символьный «пароль» доступа, который нужен для общения с сервером</p>")
+        text.setWordWrap(True)
+        settings_layout.addRow(text)
+
+        # Добавляем слайдер для интервала
+        settings_layout.addRow("Интервал опроса:", self.polling_interval_spinbox)
+        text = QLabel("<i>Раз в какое количество секунд Сабик будет стучаться к серверу</p>")
+        text.setWordWrap(True)
+        settings_layout.addRow(text)
+
+        # Подгружаем текущие настройки
+        if load_config():
+            self.server_input.setPlaceholderText(f"Сейчас: {get_server_url()}")
+            self.token_input.setPlaceholderText(f"Сейчас: {get_agent_token()[:12]}...")
+            self.polling_interval_spinbox.setValue(get_polling_interval())
+
+        settings_layout.addRow(check_layout)
+
+        # Добавляем поле для вывода результатов диагностики, по умолчанию пустое
+        self.config_test_output = QTextEdit()
+        self.config_test_output.setReadOnly(True)
+        self.config_test_output.setObjectName("DiagnosticDetailOutput")
+        settings_layout.addRow(self.config_test_output)
+        
+        # --- Сборка QStackedWidget ---
+        page_stack.addWidget(page_warning)  # Индекс 0
+        page_stack.addWidget(page_settings) # Индекс 1
+
+        return page_stack
+
+    def create_general_page(self):
+        page = QWidget()
+        layout = QFormLayout(page)
+        layout.setRowWrapPolicy(QFormLayout.WrapAllRows)
+        
+        # --- Настройки ---
+        self.ui_show_on_start_check = QCheckBox("Показывать основное окно при каждом запуске")
+        self.ui_on_top_check = QCheckBox("Держать окно поверх всех других")
+        
+        self.screenshot_folder_input = QLineEdit()
+        self.screenshot_folder_input.setReadOnly(True)
+        browse_button = QPushButton("Выбрать...")
+        browse_button.clicked.connect(self._select_screenshot_folder)
+        
+        screenshot_layout = QHBoxLayout()
+        screenshot_layout.addWidget(self.screenshot_folder_input)
+        screenshot_layout.addWidget(browse_button)
+
+        # --- Заметка для "тупого" ---
+        notes = QLabel(
+            "<p>Это базовые настройки поведения окна. Здесь нет ничего, что можно было бы сломать.</p>"
+            "<p>Если тебе не нравится, что я появляюсь на экране при каждом запуске компьютера... Чтож, тут ты можешь скрыть меня в нижней панели.</p>"
+            "<p><b>Папка для скриншотов:</b> Мы не будем воровать твои личные фотографии, честно. "
+            "Просто укажи, куда складывать снимки экрана, которые ты делаешь с помощью горячих клавиш.</p>"
+        )
+        notes.setWordWrap(True) # Включаем перенос слов
+
+        # --- Компоновка ---
+        layout.addRow(QLabel("<h3>Поведение окна</h3>"))
+        layout.addRow(self.ui_show_on_start_check)
+        layout.addRow(self.ui_on_top_check)
+        layout.addRow("Папка для скриншотов:", screenshot_layout)
+        layout.addRow(notes)
+        
+        return page
+
+    def create_notifications_page(self):
+        page = QWidget()
+        layout = QFormLayout(page)
+
+        # --- Настройки ---
+        self.notif_on_finish_check = QCheckBox("Когда команда успешно завершилась")
+        self.notif_on_error_check = QCheckBox("Когда что-то пошло не так (ошибка)")
+
+        # --- Заметка для "тупого" ---
+        notes = QLabel(
+            "<p>Иногда я работаю в фоновом режиме и хочу сообщить тебе о результатах. "
+            "Эти галочки отвечают за всплывающие уведомления в углу экрана.</p>"
+            "<p><b>Совет:</b> Если я тебя раздражаю, просто отключи их. "
+            "Но тогда не жалуйся, что ты что-то пропустил.</p>"
+        )
+        notes.setWordWrap(True)
+
+        # --- Компоновка ---
+        layout.addRow(QLabel("<h3>Когда показывать всплывающие уведомления?</h3>"))
+        layout.addRow(self.notif_on_finish_check)
+        layout.addRow(self.notif_on_error_check)
+        layout.addRow(notes)
+
+        return page
+        
+    def create_diagnostics_page(self):
+        page = QWidget()
+        layout = QFormLayout(page)
+
+        # --- Настройки ---
+        self.diag_popup_check = QCheckBox("Показывать отчет в отдельном окне")
+        self.auto_recovery_check = QCheckBox("Пытаться исправить сетевые проблемы (только Linux)")
+
+        if not is_linux():
+            self.auto_recovery_check.setEnabled(False)
+            self.auto_recovery_check.setToolTip("Эта опция доступна только в Linux-системах")
+            
+        # --- Заметка для "тупого" ---
+        notes = QLabel(
+            "<p>Я постоянно слежу за своим состоянием. Эти настройки лишь определяют, <b>как</b> я буду тебе об этом докладывать.</p>"
+            "<ul>"
+            "<li><b>Отчет в отдельном окне:</b> Если включено, после диагностики появится окно с результатами, которое придется закрыть. Если выключено — я просто покажу уведомление.</li>"
+            "<li><b>Пытаться исправить:</b> Если что-то не так с сетью, я могу попытаться перезапустить ее сам. <b>Внимание:</b> это может на несколько секунд прервать твое интернет-соединение.</li>"
+            "</ul>"
+        )
+        notes.setWordWrap(True)
+
+        # --- Компоновка ---
+        layout.addRow(QLabel("<h3>Поведение диагностики</h3>"))
+        layout.addRow(self.diag_popup_check)
+        layout.addRow(self.auto_recovery_check)
+        layout.addRow(notes)
+        
+        return page
+
+    def create_shortcuts_page(self):
+        page = QWidget()
+        layout = QFormLayout(page)
+
+        # --- Настройки ---
+        self.shortcuts_enabled_check = QCheckBox("Включить глобальные сочетания клавиш (только Windows)")
+        self.shortcuts_restart_label = QLabel("Применится при перезапуске")
+        self.shortcuts_restart_label.setObjectName("RestartLabel")
+        self.shortcuts_restart_label.hide()
+
+        if is_linux():
+            self.shortcuts_enabled_check.setEnabled(False)
+            self.shortcuts_enabled_check.setChecked(False)
+            self.shortcuts_enabled_check.setToolTip("Эта опция доступна только в NT-системах")
+        
+        # --- Заметка для "тупого" ---
+        notes = QLabel(
+            "<p>Это главный рубильник для всех горячих клавиш в системе (например, для создания скриншотов).</p>"
+            "<p>Если эта галочка снята, никакие сочетания клавиш, связанные со мной, работать не будут. "
+            "Это полезно, если мои комбинации конфликтуют с твоими любимыми играми или программами.</p>"
+        )
+        notes.setWordWrap(True)
+
+        # --- Компоновка ---
+        layout.addRow(self.shortcuts_enabled_check) 
+        layout.addRow(self.shortcuts_restart_label)
+        layout.addRow(notes)
+        
+        return page
+    
+    def create_logging_page(self):
+        page = QWidget()
+        layout = QFormLayout(page)
+
+        # --- Настройки ---
+        self.log_level_combo = QComboBox()
+        self.log_level_combo.addItems(["Минимальный", "Оптимальный", "ВСЁ"])
+        
+        self.log_size_spin = QSpinBox()
+        self.log_size_spin.setRange(10, 1024)
+        self.log_size_spin.setSuffix(" МБ")
+        
+        self.log_size_restart_label = QLabel("Применится при перезапуске")
+        self.log_size_restart_label.setObjectName("RestartLabel")
+        self.log_size_restart_label.hide()
+        
+        # --- Заметка для "тупого" ---
+        notes = QLabel(
+            "<p>Я веду текстовый дневник (логи) своей работы. Это нужно, чтобы в случае проблем можно было понять, что пошло не так.</p>"
+            "<ul>"
+            "<li><b>Уровень записей:</b> Сколько всего я должен записывать. <b>Минимальный</b> — только ошибки, <b>Оптимальный</b> — основную информацию, <b>ВСЁ</b> — вообще всё подряд (для техподдержки).</li>"
+            "<li><b>Размер дневника:</b> Как сильно я могу его растить, прежде чем начну удалять старые записи.</li>"
+            "</ul>"
+            "<p><b>Обычному пользователю здесь лучше ничего не трогать.</b></p>"
+        )
+        notes.setWordWrap(True)
+
+        # --- Компоновка ---
+        layout.addRow(QLabel("<h3>Настройки «дневника» работы</h3>"))
+        layout.addRow("Уровень записей:", self.log_level_combo)
+        layout.addRow("Макс. размер дневника:", self.log_size_spin)
+        layout.addRow(self.log_size_restart_label)
+        layout.addRow(notes)
+
+        return page
+    
+    def _update_server_status(self, status: str, text: str):
+        """
+        Обновляет текст и цвет статусной метки в зависимости от статуса.
+        """
+        # 1. Устанавливаем текст
+        self.server_check_status_label.setText(f"<i>Статус: {text}</i>")
+        
+        # 2. Устанавливаем свойство для QSS
+        self.server_check_status_label.setProperty("status", status)
+        
+        # 3. Обновляем стиль
+        self.server_check_status_label.style().unpolish(self.server_check_status_label)
+        self.server_check_status_label.style().polish(self.server_check_status_label)
+    
+    def __test_config(self):
+        self._update_server_status("checking", "Инициирую проверку...")
+
+        config = self.__get_config_from_form()
+        if not config:
+            self._update_server_status("aborted", "Проверка прервана!")
+            return
+        
+        self._update_server_status("checking", "Терпеливо ждите... Отправляю запрос...")
+        
+        subik, status = get_me(config)
+
+        if not subik:
+            if status.get("type") == ErrorType.NETWORK_TRANSIENT:
+                self._update_server_status("error", "Сетевая ошибка! Проверьте логи!")
+            
+            elif "авторизации" in status.get("message"):
+                self._update_server_status("error", "Нет доступа! Проверьте токен!")
+            
+            else:
+                self._update_server_status("error", "Что-то пошло не так. Читай логи.")
+
+            self.config_test_output.setText(status.get("message"))
+        
+        else:
+            self._update_server_status("success", "Конфигурация коректна")
+            self.config_test_output.setText(f"""
+                <h4>Информация о агенте успешно получена!</h4>
+                <p><b>Имя агента:</b> <pre>{subik.get('agent_name')}</pre></p>
+                <p><b>Количество VPN конфигураций:</b> <pre>{len(subik.get('vpn_configs'))}</pre></p>
+                """)
+    
+    def __get_config_from_form(self):
+        server_url = self.server_input.text().strip()
+        auth_token = self.token_input.text().strip()
+        polling_interval = self.polling_interval_spinbox.value()
+
+        if load_config():
+            server_url = server_url if server_url else get_server_url()
+            auth_token = auth_token if auth_token else get_agent_token()
+        
+        parsed_url = urlparse(server_url)
+        is_valid_hypertext_url = parsed_url.scheme.lower() in ['http', 'https'] and parsed_url.netloc
+        is_https = parsed_url.scheme.lower() == 'https'
+
+        if not is_valid_hypertext_url:
+            QMessageBox.critical(self, "Ошибка", "Введён некорректный адрес сервера. Пожалуйста, убедитесь, что это полная ссылка (например, https://example.com).")
+            return
+
+        if not is_https and not server_url == get_server_url():
+            reply = QMessageBox.question(
+                self,
+                "Предупреждение безопасности",
+                "Вы ввели адрес без HTTPS. Это небезопасно и может привести к перехвату данных.\n\nВы уверены, что хотите продолжить?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply == QMessageBox.No:
+                return
+        
+        return {
+            "server_url": server_url,
+            "auth_token": auth_token,
+            "polling_interval": polling_interval,
+            "DEBUG": get_debug_state()
+        }
+
+    def connect_signals(self):
+        self.nav_list.currentRowChanged.connect(self.stacked_widget.setCurrentIndex)
+        self.log_size_spin.valueChanged.connect(self.on_restart_setting_changed)
+        self.shortcuts_enabled_check.stateChanged.connect(self.on_restart_setting_changed)
+
+    def on_restart_setting_changed(self):
+        sender = self.sender()
+        self.restart_required_flag = True
+        if sender == self.log_size_spin: self.log_size_restart_label.show()
+        elif sender == self.shortcuts_enabled_check: self.shortcuts_restart_label.show()
+    
+    def __dehumanize_log_level(self, level: str):
+        log_level = {
+            "Минимальный": "WARNING",
+            "Оптимальный": "INFO",
+            "ВСЁ": "DEBUG"
+        }
+        return log_level.get(level, "INFO")
+    
+    def __humanize_log_level(self, level: str):
+        log_level = {
+            "WARNING": "Минимальный",
+            "INFO": "Оптимальный",
+            "DEBUG": "ВСЁ"
+        }
+        return log_level.get(level, "Оптимальный")
+
+    def load_settings(self):
+        s = self.settings
+        self.ui_show_on_start_check.setChecked(s.value("ui/showMainWindowOnStart", True, type=bool))
+        self.ui_on_top_check.setChecked(s.value("ui/mainWindowOnTop", False, type=bool))
+        self.notif_on_finish_check.setChecked(s.value("notifications/pushOnCommandFinish", True, type=bool))
+        self.notif_on_error_check.setChecked(s.value("notifications/pushOnError", True, type=bool))
+        self.shortcuts_enabled_check.setChecked(s.value("shortcuts/Enabled", True, type=bool))
+        self.diag_popup_check.setChecked(s.value("diag/reportInPopup", True, type=bool))
+        self.auto_recovery_check.setChecked(s.value("diag/autoRecoveryNetwork", False, type=bool))
+        self.log_level_combo.setCurrentText(self.__humanize_log_level(s.value("logging/level", "INFO", type=str)))
+        self.log_size_spin.setValue(s.value("logging/maxLogFolderSizeMB", 100, type=int))
+        
+        default_path = os.path.join(os.path.expanduser('~'), 'Pictures')
+        self.screenshot_folder_input.setText(s.value("screenshots/savePath", default_path, type=str))
+
+    def save_settings(self):
+        s = self.settings
+        s.setValue("ui/showMainWindowOnStart", self.ui_show_on_start_check.isChecked())
+        s.setValue("ui/mainWindowOnTop", self.ui_on_top_check.isChecked())
+        s.setValue("notifications/pushOnCommandFinish", self.notif_on_finish_check.isChecked())
+        s.setValue("notifications/pushOnError", self.notif_on_error_check.isChecked())
+        s.setValue("shortcuts/Enabled", self.shortcuts_enabled_check.isChecked())
+        s.setValue("diag/reportInPopup", self.diag_popup_check.isChecked())
+        if is_linux():
+            s.setValue("diag/autoRecoveryNetwork", self.auto_recovery_check.isChecked())
+        s.setValue("screenshots/savePath", self.screenshot_folder_input.text())
+
+        # Логи
+        s.setValue("logging/maxLogFolderSizeMB", self.log_size_spin.value())
+        log_level = self.__dehumanize_log_level(self.log_level_combo.currentText())
+        set_global_log_level(log_level)
+        s.setValue("logging/level", log_level)
+
+        # Настройки подключения
+        config = self.__get_config_from_form()
+        if config:
+            save_config(config)
+
+    def _select_screenshot_folder(self):
+        current_path = self.screenshot_folder_input.text() or os.path.expanduser('~')
+        folder = QFileDialog.getExistingDirectory(self, "Выберите папку для скриншотов", current_path)
+        if folder: self.screenshot_folder_input.setText(folder)
+
+    def accept(self):
+        self.save_settings()
+
+        # Показываем сообщение, если нужно
+        if self.restart_required_flag:
+            QMessageBox.information(
+                self,
+                "Применяю настройки...",
+                "Ты изменил одну из тех важных настроек, которые вступают в силу только 'на свежую голову'.\n\n"
+                "Поэтому я сейчас сам себя перезапущу, чтобы всё заработало как надо. "
+                "Просто нажми 'ОК', и я мигом вернусь."
+            )
+            # Закрываем диалог и возвращаем код "НУЖЕН ПЕРЕЗАПУСК"
+            self.done(self.RestartRequired)
+        else:
+            # Закрываем диалог и возвращаем код "ПРОСТО СОХРАНЕНО"
+            self.done(self.SettingsSaved)
