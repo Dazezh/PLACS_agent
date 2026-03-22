@@ -18,6 +18,17 @@ from workers.network_diagnoser import NetworkDiagnoser
 from workers.hotkey_listener import GlobalHotkeyListener
 
 from core.error_state_manager import ErrorStateManager
+from core.single_instance import SingleInstanceLock
+from core.windows_service_manager import (
+    SERVICE_SETTINGS_KEY,
+    SERVICE_STATUS_MISSING,
+    SERVICE_STATUS_RUNNING,
+    disable_service_cli,
+    install_or_repair_service_elevated,
+    install_service_cli,
+    query_service_status,
+    start_service,
+)
 
 from core.utils import is_windows, clear_folder
 from core.ver import __assets_packet_version__, __version__
@@ -137,6 +148,43 @@ def _shutdown_core(final_action, app, main_window, power_off_title="Отключ
     log.info(f"Финальное действие будет выполнено через {delay_ms / 1000:.1f} сек.")
     QTimer.singleShot(delay_ms, final_action)
 
+def ensure_windows_admin_service_ready(app, window):
+    if not is_windows():
+        return True
+
+    settings = QSettings("PLACS", "Agent")
+    configured_before = settings.value(SERVICE_SETTINGS_KEY, False, type=bool)
+    status_info = query_service_status()
+    status = status_info.get("status")
+
+    if status not in (SERVICE_STATUS_MISSING, SERVICE_STATUS_RUNNING):
+        start_service()
+        status_info = query_service_status()
+        status = status_info.get("status")
+
+    if status == SERVICE_STATUS_RUNNING:
+        settings.setValue(SERVICE_SETTINGS_KEY, True)
+        return True
+
+    dialog_result, accepted_setup = window.show_service_setup_window(retry_mode=configured_before)
+    if dialog_result != QDialog.Accepted or not accepted_setup:
+        app.quit()
+        return False
+
+    setup_ok, setup_message = install_or_repair_service_elevated()
+    if not setup_ok:
+        QMessageBox.critical(
+            window,
+            "Служба не настроена",
+            f"Не удалось завершить настройку службы.\n\n{setup_message}",
+        )
+        app.quit()
+        return False
+
+    settings.setValue(SERVICE_SETTINGS_KEY, True)
+    return True
+
+
 def initialize_agent_ui_and_config():
     """Инициализирует QApplication, загружает конфиг и настраивает UI."""
     global log, main_window, tray_icon, agent_thread, agent_worker, error_state_manager
@@ -173,7 +221,7 @@ def initialize_agent_ui_and_config():
         return
 
     if not server_url or not auth_token:
-        temp_log = setup_logger(agent_name="initial_setup") 
+        temp_log, log_path = setup_logger(agent_name="initial_setup") 
         temp_log.warning("Конфигурация агента отсутствует или неполна. Запускаю UI для настройки.")
         
         dialog = ConfigDialog()
@@ -197,6 +245,9 @@ def initialize_agent_ui_and_config():
     error_state_manager = ErrorStateManager()
 
     main_window = MainWindow(DEBUG_MODE, log_path)
+    if not ensure_windows_admin_service_ready(app, main_window):
+        log.error("Служба Windows Admin Service не готова. Завершение работы приложения.")
+        return False
     tray_icon = SystemTrayApp(icon_path, app, main_window)
 
     agent_thread = QThread() # Создаем экземпляр потока
@@ -323,11 +374,37 @@ if __name__ == "__main__":
     import argparse
     import subprocess
 
+    if "--service-install" in sys.argv:
+        sys.exit(install_service_cli())
+
+    if "--service-disable" in sys.argv:
+        sys.exit(disable_service_cli())
+
+    if "--service-host" in sys.argv:
+        import servicemanager
+        from workers.windows_admin_service import PLACSAgentWindowsService
+
+        servicemanager.Initialize()
+        servicemanager.PrepareToHostSingle(PLACSAgentWindowsService)
+        servicemanager.StartServiceCtrlDispatcher()
+        sys.exit(0)
+
     parser = argparse.ArgumentParser(description='PLACS Агент - ПО для удалённого доступа и отслежвания состяния устройства клиента.')
     parser.add_argument('skip_update', type=str, nargs='?', default='.',
                         help='Пропустить проверку обновлений. Если аргумент отсутствует, будет запущено обновление.')
 
     args = parser.parse_args()
+
+    instance_lock = SingleInstanceLock("PLACSAgent")
+    lock_acquired, running_pid = instance_lock.acquire()
+    if not lock_acquired:
+        duplicate_app = QApplication.instance() or QApplication(sys.argv)
+        QMessageBox.information(
+            None,
+            "PLACS Agent",
+            f"PLACS Agent уже запущен.\n\nPID активного экземпляра: {running_pid}",
+        )
+        sys.exit(0)
 
     if args.skip_update == '.' and get_server_url() and not DEBUG_MODE:
         start_update()
@@ -335,6 +412,10 @@ if __name__ == "__main__":
     # Если мы дошли до сюда, значит, либо был аргумент skip_update,
     # либо произошла ошибка при запуске обновления, и мы решили продолжить.
     app = initialize_agent_ui_and_config()
+
+    if not app:
+        print("Не удалось инициализировать приложение. Завершение.")
+        sys.exit(1)
 
     # Запускаем потоки, если они определены
     if agent_thread and agent_worker:

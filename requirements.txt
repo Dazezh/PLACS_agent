@@ -10,3 +10,4 @@ keyboard
 playsound
 psutil
 wmi
+pywin32

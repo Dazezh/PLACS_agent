@@ -13,7 +13,7 @@ from workers.server_communicator import (
     report_specs,
     report_metrics,
 )
-from workers.command_executor import execute_command, run_elevated_background, close_openvpn_connection
+from workers.command_executor import execute_command
 
 from core.utils import (
     sanitize_filename,
@@ -132,27 +132,10 @@ class AgentWorker(QObject):
             if not target:
                 self.vpn_operation_status.emit('error', f"Конфиг для сети '{network_name}' не найден")
                 return
-
-            # Закрываем предыдущие соединения
-            close_openvpn_connection()
-
-            config_path = target.get('path')
-            if not os.path.exists(config_path):
-                self.vpn_operation_status.emit('error', f"Файл конфига не найден: {config_path}")
-                return
-
-            openvpn_command_string = f"openvpn --config \"{config_path}\""
-            success, message = run_elevated_background(openvpn_command_string)
-            if success:
+            status, message = execute_command({"type": "network", "command_text": network_name})
+            if status == "success":
                 self.current_vpn_network = network_name
-                # Flush DNS на Windows
-                if is_windows():
-                    flush_success, flush_msg = run_elevated_background("ipconfig /flushdns")
-                    if flush_success:
-                        message += " | DNS сброшен"
-                    else:
-                        message += f" | DNS не сброшен: {flush_msg}"
-                self.vpn_operation_status.emit('success', f"Соединение с сетью \"{network_name}\" инициировано. {message}")
+                self.vpn_operation_status.emit('success', message)
                 send_log_to_server("info", f"Агент самостоятельно инициировал соединение с сетью '{network_name}'.")
             else:
                 self.vpn_operation_status.emit('error', f"Не удалось подключиться: {message}")
@@ -163,10 +146,10 @@ class AgentWorker(QObject):
     def disconnect_from_network(self):
         """Отключает все активные VPN соединения."""
         try:
-            status, message = close_openvpn_connection()
-            if status:
+            status, message = execute_command({"type": "network", "command_text": "close_all"})
+            if status == "success":
                 self.current_vpn_network = None
-                self.vpn_operation_status.emit('success', 'Все VPN соединения закрыты.')
+                self.vpn_operation_status.emit('success', message)
             else:
                 self.vpn_operation_status.emit('error', f"Не удалось закрыть соединения: {message}")
         except Exception as e:

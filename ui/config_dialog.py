@@ -10,8 +10,15 @@ from PyQt5.QtCore import Qt, QSettings, QCoreApplication
 from core.config_manager import get_agent_token, get_polling_interval, get_server_url, load_config, save_config, get_debug_state
 
 from core.logger import set_global_log_level
+from core.windows_service_manager import (
+    SERVICE_SETTINGS_KEY,
+    SERVICE_STATUS_RUNNING,
+    disable_service_elevated,
+    query_service_status,
+)
+from core.windows_autostart import is_autostart_enabled_for_current_app, set_autostart_enabled
 
-from core.utils import is_linux
+from core.utils import is_linux, is_windows
 
 from urllib.parse import urlparse
 
@@ -141,6 +148,7 @@ class ClientSettingsDialog(QDialog):
     """
     SettingsSaved = QDialog.Accepted       # Просто сохранено, значение = 1
     RestartRequired = QDialog.Accepted + 1 # Сохранено и нужен перезапуск, значение = 2
+    ServiceDisabled = QDialog.Accepted + 2
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -579,6 +587,191 @@ class ClientSettingsDialog(QDialog):
             "DEBUG": get_debug_state()
         }
 
+    def create_pages(self):
+        pages = {
+            "Обзор": self.create_overview_page,
+            "Основные": self.create_general_page,
+            "Уведомления": self.create_notifications_page,
+            "Горячие клавиши": self.create_shortcuts_page,
+            "Диагностика": self.create_diagnostics_page,
+            "Логирование": self.create_logging_page,
+            "Фоновая служба": self.create_background_service_page,
+            "СОЕДИНЕНИЕ": self.create_server_settings_page,
+        }
+
+        for name, create_func in pages.items():
+            page = create_func()
+            self.stacked_widget.addWidget(page)
+            self.nav_list.addItem(name)
+
+    def create_background_service_page(self):
+        page_stack = QStackedWidget()
+
+        page_warning = QWidget()
+        warning_layout = QVBoxLayout(page_warning)
+        warning_layout.setAlignment(Qt.AlignCenter)
+
+        title = QLabel("<p style='color: #ff3333;font-size: 28px;'>Слушай сюда.<br>Это фоновая служба Сабика.</p>")
+        title.setAlignment(Qt.AlignCenter)
+
+        warning_text = QLabel(
+            "<p style='color: #ff6666;font-size: 14px;'>Если выключить эту службу, агент потеряет безопасный путь для привилегированных команд. "
+            "После отключения я сразу завершу работу приложения, чтобы не остаться в полусломанном состоянии.</p>"
+        )
+        warning_text.setAlignment(Qt.AlignCenter)
+        warning_text.setWordWrap(True)
+
+        proceed_button = QPushButton("Я понимаю риск и хочу открыть настройки службы")
+        proceed_button.clicked.connect(lambda: page_stack.setCurrentIndex(1))
+
+        warning_layout.addStretch(1)
+        warning_layout.addWidget(title)
+        warning_layout.addWidget(warning_text)
+        warning_layout.addWidget(proceed_button)
+        warning_layout.addStretch(1)
+
+        page_settings = QWidget()
+        settings_layout = QFormLayout(page_settings)
+        settings_layout.setContentsMargins(20, 10, 20, 10)
+
+        self.background_service_status_label = QLabel()
+        self.background_service_status_label.setWordWrap(True)
+        self.background_service_note_label = QLabel(
+            "<p>Здесь можно проверить, жива ли фоновая служба, и при необходимости отключить её.</p>"
+        )
+        self.background_service_note_label.setWordWrap(True)
+
+        refresh_button = QPushButton("Обновить статус")
+        refresh_button.clicked.connect(self.refresh_background_service_status)
+
+        self.disable_background_service_button = QPushButton("Отключить службу и закрыть агент")
+        self.disable_background_service_button.clicked.connect(self.disable_background_service)
+
+        settings_layout.addRow(QLabel("<h3>Состояние фоновой службы</h3>"))
+        settings_layout.addRow("Текущий статус:", self.background_service_status_label)
+        settings_layout.addRow(refresh_button)
+        settings_layout.addRow(self.disable_background_service_button)
+        settings_layout.addRow(self.background_service_note_label)
+
+        page_stack.addWidget(page_warning)
+        page_stack.addWidget(page_settings)
+
+        self.refresh_background_service_status()
+        return page_stack
+
+    def refresh_background_service_status(self):
+        status_info = query_service_status()
+        status = status_info.get("status")
+        message = status_info.get("message", "")
+
+        if status == SERVICE_STATUS_RUNNING:
+            view_text = "Служба установлена и запущена."
+            self.disable_background_service_button.setEnabled(True)
+        else:
+            view_text = "Служба не работает или отсутствует."
+            self.disable_background_service_button.setEnabled(False)
+
+        self.background_service_status_label.setText(f"{view_text}\n\n{message}")
+
+    def disable_background_service(self):
+        ok, message = disable_service_elevated()
+        if not ok:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось отключить службу.\n\n{message}")
+            return
+
+        self.settings.setValue(SERVICE_SETTINGS_KEY, False)
+        QMessageBox.information(
+            self,
+            "Служба отключена",
+            "Фоновая служба отключена. Агент сейчас завершит работу.",
+        )
+        self.done(self.ServiceDisabled)
+
+    def create_general_page(self):
+        page = QWidget()
+        layout = QFormLayout(page)
+        layout.setRowWrapPolicy(QFormLayout.WrapAllRows)
+
+        self.ui_show_on_start_check = QCheckBox("Показывать основное окно при каждом запуске")
+        self.ui_on_top_check = QCheckBox("Держать окно поверх всех других")
+        self.autostart_check = QCheckBox("Запускать агент автоматически при входе в Windows")
+        self.confirm_admin_requests_check = QCheckBox("Спрашивать перед выполнением действий с правами администратора")
+
+        self.screenshot_folder_input = QLineEdit()
+        self.screenshot_folder_input.setReadOnly(True)
+        browse_button = QPushButton("Выбрать...")
+        browse_button.clicked.connect(self._select_screenshot_folder)
+
+        screenshot_layout = QHBoxLayout()
+        screenshot_layout.addWidget(self.screenshot_folder_input)
+        screenshot_layout.addWidget(browse_button)
+
+        notes = QLabel(
+            "<p>Здесь собраны базовые настройки интерфейса и поведения привилегированных действий.</p>"
+            "<p>Если галочка подтверждения включена, я покажу один общий запрос перед выполнением администраторского сценария.</p>"
+        )
+        notes.setWordWrap(True)
+
+        layout.addRow(QLabel("<h3>Поведение окна</h3>"))
+        layout.addRow(self.ui_show_on_start_check)
+        layout.addRow(self.ui_on_top_check)
+        if not is_windows():
+            self.autostart_check.setEnabled(False)
+            self.autostart_check.setToolTip("Автозапуск сейчас поддержан только в Windows.")
+        layout.addRow(self.autostart_check)
+        if is_linux():
+            self.confirm_admin_requests_check.setEnabled(False)
+        layout.addRow(self.confirm_admin_requests_check)
+        layout.addRow("Папка для скриншотов:", screenshot_layout)
+        layout.addRow(notes)
+        return page
+
+    def load_settings(self):
+        s = self.settings
+        self.ui_show_on_start_check.setChecked(s.value("ui/showMainWindowOnStart", True, type=bool))
+        self.ui_on_top_check.setChecked(s.value("ui/mainWindowOnTop", False, type=bool))
+        self.autostart_check.setChecked(
+            is_autostart_enabled_for_current_app() if is_windows() else s.value("startup/enabled", False, type=bool)
+        )
+        self.notif_on_finish_check.setChecked(s.value("notifications/pushOnCommandFinish", True, type=bool))
+        self.notif_on_error_check.setChecked(s.value("notifications/pushOnError", True, type=bool))
+        self.shortcuts_enabled_check.setChecked(s.value("shortcuts/Enabled", True, type=bool))
+        self.diag_popup_check.setChecked(s.value("diag/reportInPopup", True, type=bool))
+        self.auto_recovery_check.setChecked(s.value("diag/autoRecoveryNetwork", False, type=bool))
+        self.log_level_combo.setCurrentText(self.__humanize_log_level(s.value("logging/level", "INFO", type=str)))
+        self.log_size_spin.setValue(s.value("logging/maxLogFolderSizeMB", 100, type=int))
+        self.confirm_admin_requests_check.setChecked(s.value("admin/confirmPrivilegedRequests", True, type=bool))
+
+        default_path = os.path.join(os.path.expanduser('~'), 'Pictures')
+        self.screenshot_folder_input.setText(s.value("screenshots/savePath", default_path, type=str))
+
+    def save_settings(self):
+        s = self.settings
+        s.setValue("ui/showMainWindowOnStart", self.ui_show_on_start_check.isChecked())
+        s.setValue("ui/mainWindowOnTop", self.ui_on_top_check.isChecked())
+        s.setValue("startup/enabled", self.autostart_check.isChecked())
+        s.setValue("notifications/pushOnCommandFinish", self.notif_on_finish_check.isChecked())
+        s.setValue("notifications/pushOnError", self.notif_on_error_check.isChecked())
+        s.setValue("shortcuts/Enabled", self.shortcuts_enabled_check.isChecked())
+        s.setValue("diag/reportInPopup", self.diag_popup_check.isChecked())
+        if is_linux():
+            s.setValue("diag/autoRecoveryNetwork", self.auto_recovery_check.isChecked())
+        s.setValue("screenshots/savePath", self.screenshot_folder_input.text())
+        s.setValue("admin/confirmPrivilegedRequests", self.confirm_admin_requests_check.isChecked())
+
+        s.setValue("logging/maxLogFolderSizeMB", self.log_size_spin.value())
+        log_level = self.__dehumanize_log_level(self.log_level_combo.currentText())
+        set_global_log_level(log_level)
+        s.setValue("logging/level", log_level)
+
+        if is_windows():
+            set_autostart_enabled(self.autostart_check.isChecked())
+            s.setValue("startup/enabled", is_autostart_enabled_for_current_app())
+
+        config = self.__get_config_from_form()
+        if config:
+            save_config(config)
+
     def connect_signals(self):
         self.nav_list.currentRowChanged.connect(self.stacked_widget.setCurrentIndex)
         self.log_size_spin.valueChanged.connect(self.on_restart_setting_changed)
@@ -610,6 +803,9 @@ class ClientSettingsDialog(QDialog):
         s = self.settings
         self.ui_show_on_start_check.setChecked(s.value("ui/showMainWindowOnStart", True, type=bool))
         self.ui_on_top_check.setChecked(s.value("ui/mainWindowOnTop", False, type=bool))
+        self.autostart_check.setChecked(
+            is_autostart_enabled_for_current_app() if is_windows() else s.value("startup/enabled", False, type=bool)
+        )
         self.notif_on_finish_check.setChecked(s.value("notifications/pushOnCommandFinish", True, type=bool))
         self.notif_on_error_check.setChecked(s.value("notifications/pushOnError", True, type=bool))
         self.shortcuts_enabled_check.setChecked(s.value("shortcuts/Enabled", True, type=bool))
@@ -625,6 +821,7 @@ class ClientSettingsDialog(QDialog):
         s = self.settings
         s.setValue("ui/showMainWindowOnStart", self.ui_show_on_start_check.isChecked())
         s.setValue("ui/mainWindowOnTop", self.ui_on_top_check.isChecked())
+        s.setValue("startup/enabled", self.autostart_check.isChecked())
         s.setValue("notifications/pushOnCommandFinish", self.notif_on_finish_check.isChecked())
         s.setValue("notifications/pushOnError", self.notif_on_error_check.isChecked())
         s.setValue("shortcuts/Enabled", self.shortcuts_enabled_check.isChecked())
@@ -639,10 +836,23 @@ class ClientSettingsDialog(QDialog):
         set_global_log_level(log_level)
         s.setValue("logging/level", log_level)
 
+        if is_windows():
+            try:
+                set_autostart_enabled(self.autostart_check.isChecked())
+                s.setValue("startup/enabled", is_autostart_enabled_for_current_app())
+            except Exception as exc:
+                QMessageBox.critical(
+                    self,
+                    "Автозапуск",
+                    f"Не удалось изменить автозапуск Windows.\n\n{exc}",
+                )
+                return False
+
         # Настройки подключения
         config = self.__get_config_from_form()
         if config:
             save_config(config)
+        return True
 
     def _select_screenshot_folder(self):
         current_path = self.screenshot_folder_input.text() or os.path.expanduser('~')
@@ -650,7 +860,8 @@ class ClientSettingsDialog(QDialog):
         if folder: self.screenshot_folder_input.setText(folder)
 
     def accept(self):
-        self.save_settings()
+        if self.save_settings() is False:
+            return
 
         # Показываем сообщение, если нужно
         if self.restart_required_flag:

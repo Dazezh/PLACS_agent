@@ -43,6 +43,64 @@ QToolBar QPushButton:pressed {
     border: 0;
 }
 
+QTextBrowser {
+    border: none;
+    padding: 10px;
+    color: #e0e0e0;
+}
+
+QWidget#MainMenuWidget {
+    background-color: #1f2023;
+}
+
+QLabel#MainMenuHeader {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #25272c, stop:1 #1d1f23);
+    border: 1px solid #4b4f57;
+    border-radius: 20px;
+    padding: 18px 22px;
+    color: #f3f0ea;
+}
+
+QPushButton#MainMenuActionButton,
+QPushButton#MainMenuActionButtonPriority {
+    text-align: left;
+    padding: 16px 20px;
+    padding-left: 24px;
+    border-radius: 22px;
+    border: 1px solid #c8b8a6;
+    color: #f5efe7;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+QPushButton#MainMenuActionButton {
+    background-color: #2d3138;
+}
+
+QPushButton#MainMenuActionButton:hover {
+    background-color: #393e46;
+    border: 1px solid #e0d2c2;
+}
+
+QPushButton#MainMenuActionButton:pressed {
+    background-color: #24282e;
+    border: 1px solid #bca995;
+}
+
+QPushButton#MainMenuActionButtonPriority {
+    background-color: #6a5143;
+}
+
+QPushButton#MainMenuActionButtonPriority:hover {
+    background-color: #7a5e4f;
+    border: 1px solid #ecd9c5;
+}
+
+QPushButton#MainMenuActionButtonPriority:pressed {
+    background-color: #573f34;
+    border: 1px solid #cdb8a4;
+}
+
 /* Стили для статусбара */
 QLabel#StatusBarIndicator {
     background-color: transparent; /* Делаем фон полностью прозрачным */
@@ -432,4 +490,104 @@ QLabel#RestartLabel {
     color: #ffcc00; /* Золотистый/желтый для привлечения внимания */
     font-size: 11px;
     font-style: italic;
+}
+
+QDialog#ServiceSetupDialog {
+    background-color: #1f2023;
+}
+
+QWidget#ServiceSetupCard {
+    background-color: #23262b;
+    border: 1px solid #4b4f57;
+    border-radius: 26px;
+}
+
+QWidget#ServiceSetupLeftPanel,
+QWidget#ServiceSetupRightPanel {
+    background-color: transparent;
+}
+
+QWidget#ServiceSetupRightPanel {
+    background-color: #27303a;
+    border: 1px solid #465261;
+    border-radius: 22px;
+}
+
+QLabel#ServiceSetupTitle {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #25272c, stop:1 #1d1f23);
+    border: 1px solid #555a63;
+    border-radius: 20px;
+    padding: 18px 22px;
+    color: #f3f0ea;
+}
+
+QScrollArea#ServiceSetupScroll {
+    background-color: transparent;
+    border: none;
+}
+
+QTextBrowser#ServiceSetupDescription {
+    background-color: #2c3036;
+    border: 1px solid #444a53;
+    border-radius: 20px;
+    padding: 20px;
+    color: #ece7df;
+    font-size: 15px;
+    line-height: 1.45;
+}
+
+QLabel#ServiceSetupImage {
+    background-color: #27303a;
+    border: 1px solid #4a5666;
+    border-radius: 20px;
+    padding: 16px;
+}
+
+QLabel#ServiceSetupCaption {
+    background-color: #2b302f;
+    border: 1px solid #4f5953;
+    border-radius: 18px;
+    padding: 14px 18px;
+    color: #f1ede6;
+}
+
+QPushButton#ServiceSetupPrimaryButton,
+QPushButton#ServiceSetupSecondaryButton {
+    min-height: 52px;
+    border-radius: 18px;
+    padding: 10px 18px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+QPushButton#ServiceSetupPrimaryButton {
+    background-color: #6a5143;
+    border: 1px solid #cfb9a6;
+    color: #fff8f1;
+}
+
+QPushButton#ServiceSetupPrimaryButton:hover {
+    background-color: #7a5e4f;
+    border: 1px solid #ead7c4;
+}
+
+QPushButton#ServiceSetupPrimaryButton:pressed {
+    background-color: #573f34;
+    border: 1px solid #bea692;
+}
+
+QPushButton#ServiceSetupSecondaryButton {
+    background-color: #3c3131;
+    border: 1px solid #a99788;
+    color: #efe7dd;
+}
+
+QPushButton#ServiceSetupSecondaryButton:hover {
+    background-color: #483b3b;
+    border: 1px solid #d7c7b8;
+}
+
+QPushButton#ServiceSetupSecondaryButton:pressed {
+    background-color: #312626;
+    border: 1px solid #b9a898;
 }

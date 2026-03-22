@@ -7,6 +7,8 @@ __pycache__/
 env/
 venv/
 
+.vscode/
+
 # --- PyInstaller (сборка) ---
 # Игнорируем временные файлы сборки
 build/
@@ -22,3 +24,7 @@ release_builds/
 # Игнорируем папку logs и все файлы внутри
 logs/
 *.log
+
+# --- Конфигурационные файлы ---
+agent_config.json
+.admin_service_token

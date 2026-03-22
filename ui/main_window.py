@@ -4,17 +4,19 @@ import re
 from PyQt5.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QSizePolicy, QScrollArea,
     QLabel, QTextEdit, QToolBar, QPushButton, 
-    QDialog, QHBoxLayout, QStackedWidget,
+    QDialog, QHBoxLayout, QStackedWidget, QGridLayout,
     QApplication, QMessageBox, QListWidget,
     QListWidgetItem, QShortcut
 )
 
 from PyQt5.QtCore import Qt, QSettings, pyqtSignal, QSize, QTimer
-from PyQt5.QtGui import QPixmap, QFont, QMovie, QColor, QKeySequence
+from PyQt5.QtGui import QPixmap, QFont, QMovie, QColor, QKeySequence, QIcon
 
 from ui.config_dialog import ClientSettingsDialog
+from ui.service_setup_window import ServiceSetupWindow
 from core.config_manager import set_debug_state
 from core.error_types import ErrorState
+from core.privilege_prompt import approval_broker
 
 from ui.set_on_display_window import SetOnDisplayWindow
 from core.utils import get_current_time, is_linux, get_random_file_path, get_username, clear_folder, is_windows
@@ -25,6 +27,15 @@ from workers.server_communicator import send_log_to_server
 import logging
 
 log = logging.getLogger("MainWindow")
+
+LOAD_LAYOUT_INDEX = 0
+STATUS_LAYOUT_INDEX = 1
+DIAGNOSTIC_LAYOUT_INDEX = 2
+ABOUT_LAYOUT_INDEX = 3
+EXIT_LAYOUT_INDEX = 4
+SERVICE_LAYOUT_INDEX = 5
+VPN_LAYOUT_INDEX = 6
+MENU_LAYOUT_INDEX = 7
 
 class HtmlMessageDialog(QDialog):
     def __init__(self, title, html_content, img_src=None, parent=None):
@@ -90,6 +101,7 @@ class MainWindow(QMainWindow):
         
         log.info("MainWindow инициализированно!")
         self.current_display_window = None
+        self._approval_dialog_open = False
 
         self.stacked_widget = QStackedWidget() # Используем QStackedWidget для переключения лейаутов
         self.stacked_widget.setContentsMargins(0, 0, 0, 0)
@@ -107,6 +119,10 @@ class MainWindow(QMainWindow):
 
         self.init_toolbar() # Добавляем окну тулбар
         self.init_vpn_layout()  # VPN layout (добавляем до возможных переключений)
+        self.init_menu_layout()
+        self._approval_timer = QTimer(self)
+        self._approval_timer.timeout.connect(self.process_pending_privileged_requests)
+        self._approval_timer.start(200)
 
         self.layout_befor = None # Нужно чтобы возвращаться из окна "о программе" на предыдущее состояние
 
@@ -267,7 +283,7 @@ class MainWindow(QMainWindow):
         self.vpn_stack.setCurrentIndex(0)  # Показываем слой загрузки
         self.vpn_spinner_movie.start()
         self.request_vpn_refresh.emit()
-        self.switch_layout(6)  # Индекс VPN виджета в основном стеке
+        self.switch_layout(VPN_LAYOUT_INDEX)  # Индекс VPN виджета в основном стеке
 
     def hide_vpn(self):
         """Возврат с экрана VPN к предыдущему экрану."""
@@ -276,7 +292,7 @@ class MainWindow(QMainWindow):
             self.vpn_spinner_movie.stop()
         except Exception:
             pass
-        self.switch_layout(1)
+        self.switch_layout(MENU_LAYOUT_INDEX)
 
     def update_vpn_configs_view(self, configs):
         """Обновляет список VPN конфигураций.
@@ -609,7 +625,7 @@ class MainWindow(QMainWindow):
         self.restart_diagnostic_button.clicked.connect(self.start_diagnostic_signal.emit)
         button_layout.addWidget(self.restart_diagnostic_button)
 
-        self.back_button = QPushButton("Вернуться в статус")
+        self.back_button = QPushButton("Вернуться в меню")
         self.back_button.setObjectName("BackButton")
         self.back_button.clicked.connect(lambda: self.switch_to_main_status_layout())
         button_layout.addWidget(self.back_button)
@@ -713,7 +729,7 @@ class MainWindow(QMainWindow):
         go_back_button = QPushButton("<< На главную")
         go_back_button.setStyleSheet("background-color: #2e2e2e;")
         go_back_button.setToolTip("Вернуться на предыдущий экран.")
-        go_back_button.clicked.connect(lambda: self.switch_layout(1))
+        go_back_button.clicked.connect(lambda: self.switch_layout(MENU_LAYOUT_INDEX))
         layout_v.addWidget(go_back_button)
 
         # Добавляем небольшой промежуток и картинку
@@ -797,7 +813,7 @@ class MainWindow(QMainWindow):
     def toggle_service_mode(self):
         """Активирует сервисный режим и обновляет список логов."""
         log.info("Активирован сервисный режим через шорткат.")
-        self.switch_layout(5)
+        self.switch_layout(SERVICE_LAYOUT_INDEX)
         self.refresh_log_list()
         self.update_debug_button_text()
 
@@ -846,7 +862,7 @@ class MainWindow(QMainWindow):
         go_back_button = QPushButton("<< В статус")
         go_back_button.setStyleSheet("background-color: #2e2e2e;")
         go_back_button.setToolTip("Вернуться в меню статуса")
-        go_back_button.clicked.connect(lambda: self.switch_layout(1))
+        go_back_button.clicked.connect(lambda: self.switch_layout(MENU_LAYOUT_INDEX))
         layout.addWidget(go_back_button)
         
         return page
@@ -874,7 +890,7 @@ class MainWindow(QMainWindow):
         go_back_button = QPushButton("<< В статус")
         go_back_button.setStyleSheet("background-color: #2e2e2e;")
         go_back_button.setToolTip("Вернуться в меню статуса")
-        go_back_button.clicked.connect(lambda: self.switch_layout(1))
+        go_back_button.clicked.connect(lambda: self.switch_layout(MENU_LAYOUT_INDEX))
 
         left_layout.addWidget(where_iam)
         left_layout.addWidget(self.debug_toggle_button)
@@ -1074,30 +1090,36 @@ class MainWindow(QMainWindow):
         self.stacked_widget.setCurrentIndex(index)
 
         # На некоторых слоях тулбар мешает
-        if index in (0, 4):
+        if index in (LOAD_LAYOUT_INDEX, EXIT_LAYOUT_INDEX):
             self.toolbar.hide()
         
         else:
             self.toolbar.show()
         
         # Динамичное обновление заголовка
-        if index == 0:
+        if index == LOAD_LAYOUT_INDEX:
             self.setWindowTitle("PLACS Agent - Запуск Сабика...")
         
-        elif index == 1:
+        elif index == STATUS_LAYOUT_INDEX:
             self.setWindowTitle("PLACS Agent - Состояние Вашего Сабика!")
 
-        elif index == 2:
+        elif index == DIAGNOSTIC_LAYOUT_INDEX:
             self.setWindowTitle("PLACS Agent - Диагностика сети")
 
-        elif index == 3:
+        elif index == ABOUT_LAYOUT_INDEX:
             self.setWindowTitle("PLACS Agent - Что такое PLACS и зачем он тебе")
 
-        elif index == 4:
+        elif index == EXIT_LAYOUT_INDEX:
             self.setWindowTitle("PLACS Agent - Отключение Сабика...")
         
-        elif index == 6:
+        elif index == SERVICE_LAYOUT_INDEX:
+            self.setWindowTitle("PLACS Agent - Сервисный режим")
+
+        elif index == VPN_LAYOUT_INDEX:
             self.setWindowTitle("PLACS Agent - VPN Менеджер")
+
+        elif index == MENU_LAYOUT_INDEX:
+            self.setWindowTitle("PLACS Agent - Основное меню")
         
         else:
             self.setWindowTitle("PLACS Agent - Ты... Как вообще?")
@@ -1179,7 +1201,7 @@ class MainWindow(QMainWindow):
     def switch_to_main_status_layout(self):
         """Переключает обратно на основной экран статуса."""
         log.info("Переключение на основной экран статуса.")
-        self.stacked_widget.setCurrentIndex(1) # Индекс 0 для основного виджета
+        self.stacked_widget.setCurrentIndex(MENU_LAYOUT_INDEX)
 
     def update_diagnostic_checklist(self, check_name: str, status_emoji: str):
         """
@@ -1387,21 +1409,107 @@ class MainWindow(QMainWindow):
             scaled_pixmap = collar_man_pic.scaled(420, 420, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.icon_label_status.setPixmap(scaled_pixmap)
         
-        if self.stacked_widget.currentIndex() == 4:
+        if self.stacked_widget.currentIndex() == EXIT_LAYOUT_INDEX:
             pass
 
-        elif self.stacked_widget.currentIndex() == 3 and state not in (ErrorState.NETWORK, ErrorState.CRITICAL):
-            self.switch_layout(1)
+        elif self.stacked_widget.currentIndex() == ABOUT_LAYOUT_INDEX and state not in (ErrorState.NETWORK, ErrorState.CRITICAL):
+            self.switch_layout(MENU_LAYOUT_INDEX)
         
-        elif self.stacked_widget.currentIndex() == 2 and state in (ErrorState.OK, ErrorState.WARNING):
-            self.switch_layout(1)
+        elif self.stacked_widget.currentIndex() == DIAGNOSTIC_LAYOUT_INDEX and state in (ErrorState.OK, ErrorState.WARNING):
+            self.switch_layout(MENU_LAYOUT_INDEX)
         
-        elif self.stacked_widget.currentIndex() == 0:
-            self.switch_layout(1)
+        elif self.stacked_widget.currentIndex() == LOAD_LAYOUT_INDEX:
+            self.switch_layout(MENU_LAYOUT_INDEX)
             self.toolbar.show()
 
         log.info(f"UI фон изменен из-за изменения ситуации. Текущее состояние: {state}")
     
+    def init_toolbar(self):
+        self.toolbar = QToolBar("Основные действия")
+        self.addToolBar(self.toolbar)
+        self.toolbar.setMovable(False)
+
+        self.toolbar_send_log_button = QPushButton("Отправить лог сессии")
+        self.toolbar_send_log_button.clicked.connect(self.handle_toolbar_send_log)
+        self.toolbar_send_log_button.setToolTip("Отправить журнал работы на сервер")
+
+        self.toolbar_status_button = QPushButton("Статус")
+        self.toolbar_status_button.setToolTip("Открыть экран со статусом агента")
+        self.toolbar_status_button.clicked.connect(lambda: self.switch_layout(STATUS_LAYOUT_INDEX))
+        self.toolbar.addWidget(self.toolbar_status_button)
+
+        self.service_button = QPushButton("Сервисный режим")
+        self.service_button.clicked.connect(self.toggle_service_mode)
+        self.service_button.setVisible(False)
+        self.toolbar.addWidget(self.service_button)
+
+        self.toolbar_menu_button = QPushButton("Меню")
+        self.toolbar_menu_button.setToolTip("Открыть основное меню действий")
+        self.toolbar_menu_button.clicked.connect(lambda: self.switch_layout(MENU_LAYOUT_INDEX))
+        self.toolbar.addWidget(self.toolbar_menu_button)
+
+        self.service_shortcut = QShortcut(QKeySequence("Shift+A"), self)
+        self.service_shortcut.activated.connect(self.toggle_service_mode)
+        self.toolbar.hide()
+
+    def init_menu_layout(self):
+        menu_widget = QWidget()
+        menu_widget.setObjectName("MainMenuWidget")
+
+        root_layout = QVBoxLayout(menu_widget)
+        root_layout.setContentsMargins(28, 24, 28, 24)
+        root_layout.setSpacing(18)
+
+        header = QLabel("<h1>Меню PLACS</h1><p>Выберите нужное действие.</p>")
+        header.setObjectName("MainMenuHeader")
+        header.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        header.setWordWrap(True)
+        root_layout.addWidget(header)
+
+        button_grid = QGridLayout()
+        button_grid.setHorizontalSpacing(18)
+        button_grid.setVerticalSpacing(18)
+
+        actions = [
+            ("Статус", "ui/media/img/icons_png/PLACS_ICON_AHTUNG.png", lambda: self.switch_layout(STATUS_LAYOUT_INDEX), "MainMenuActionButtonPriority"),
+            ("VPN сети", "ui/media/img/icons_png/PLACS_ICON_VPN.png", self.show_vpn_layout, "MainMenuActionButtonPriority"),
+            ("Диагностика сети", "ui/media/img/icons_png/PLACS_ICON_NETWORK_CHEK.png", self.switch_to_diagnostic_layout_and_start, "MainMenuActionButton"),
+            ("Отправить логи", "ui/media/img/icons_png/PLACS_ICON_SENDLOG.png", self.handle_toolbar_send_log, "MainMenuActionButton"),
+            ("Настройки", "ui/media/img/icons_png/PLACS_ICON_SETTINGS.png", self.update_client_config, "MainMenuActionButton"),
+            ("Перезапуск", "ui/media/img/icons_png/PLACS_ICON_RESTART.png", lambda: self.restart_app(True, "Требование пользователя."), "MainMenuActionButton"),
+            ("Скрыть окно", "ui/media/img/icons_png/PLACS_ICON_HIDE.png", self.hide, "MainMenuActionButton"),
+            ("О PLACS", "ui/media/img/icons_png/PLACS_ICON.png", lambda: self.switch_layout(ABOUT_LAYOUT_INDEX), "MainMenuActionButton"),
+        ]
+
+        positions = [
+            (0, 0), (0, 1),
+            (1, 0), (1, 1),
+            (2, 0), (2, 1),
+            (3, 0), (3, 1),
+        ]
+
+        for (title, icon_path, handler, object_name), (row, col) in zip(actions, positions):
+            button = self.create_menu_action_button(title, icon_path, handler, object_name)
+            button_grid.addWidget(button, row, col)
+
+        button_grid.setColumnStretch(0, 1)
+        button_grid.setColumnStretch(1, 1)
+        root_layout.addLayout(button_grid)
+        root_layout.addStretch(1)
+
+        self.stacked_widget.addWidget(menu_widget)
+
+    def create_menu_action_button(self, title, icon_path, handler, object_name):
+        button = QPushButton(title)
+        button.setObjectName(object_name)
+        button.setCursor(Qt.PointingHandCursor)
+        button.setIcon(QIcon(icon_path))
+        button.setIconSize(QSize(64, 64))
+        button.setMinimumHeight(88)
+        button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        button.clicked.connect(handler)
+        return button
+
     def handle_display_message(self, message, duration=5):
         if self.current_display_window:
             self.current_display_window.close()
@@ -1414,7 +1522,7 @@ class MainWindow(QMainWindow):
         # Запускаем спинер
         self.exit_spiner.start()
 
-        self.switch_layout(4)
+        self.switch_layout(EXIT_LAYOUT_INDEX)
 
         # Обновляем текст
         self.exit_label.setText(f"<h1>{title}</h1>")
@@ -1431,6 +1539,71 @@ class MainWindow(QMainWindow):
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint) # Окно поверх других
         self.show()
         
+    def _confirm_and_connect(self, network_name: str):
+        """На Windows подтверждение приходит через единый брокер привилегированных действий."""
+        if is_windows():
+            self.request_vpn_connect.emit(network_name)
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Подключение к VPN",
+            f"Ты уверен, что хочешь войти в сегмент сети: «{network_name}»?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            self.request_vpn_connect.emit(network_name)
+
+    def process_pending_privileged_requests(self):
+        if self._approval_dialog_open:
+            return
+
+        request = approval_broker.get_next_request()
+        if not request:
+            return
+
+        self._approval_dialog_open = True
+        html = f"""
+        <div style="font-family:'Segoe UI',sans-serif;">
+            <p>{request.intro}</p>
+            <p><b>{request.action_description}</b></p>
+            {request.details_html}
+        </div>
+        """
+        reply = QMessageBox.question(
+            self,
+            request.title,
+            html,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        request.approved = reply == QMessageBox.Yes
+        request.event.set()
+        self._approval_dialog_open = False
+
+    def show_service_setup_window(self, retry_mode=False):
+        dialog = ServiceSetupWindow(retry_mode=retry_mode, parent=self)
+        return dialog.exec_(), dialog.accepted_setup
+
+    def update_client_config(self):
+        self.hide()
+        dialog = ClientSettingsDialog()
+        dialog_end = dialog.exec_()
+        if dialog_end == ClientSettingsDialog.SettingsSaved:
+            log.warning("Клиент сохранил конфигурацию!")
+        elif dialog_end == ClientSettingsDialog.RestartRequired:
+            log.warning("Инициирую перезапуск...")
+            self.restart_app(True, "Обновление конфигурации.")
+            return
+        elif dialog_end == ClientSettingsDialog.ServiceDisabled:
+            log.warning("Фоновая служба отключена. Завершаю агент.")
+            QApplication.instance().quit()
+            return
+        else:
+            log.info("Клиент не стал менять конфигурацию.")
+        self.show()
+
     def closeEvent(self, event):
         self.hide()
         event.ignore()
