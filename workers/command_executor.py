@@ -65,8 +65,8 @@ def _request_user_approval(action_description, details_html):
         return True
 
     request = ApprovalRequest(
-        title="Подтверждение прав администратора",
-        intro="Ой! Сервер попросил запустить с правами администратора следующее:",
+        title="Подтверждение на выполнение",
+        intro="Ой! Необходимо подтвердить выполнение следующего действия:",
         action_description=action_description,
         details_html=details_html,
     )

@@ -189,23 +189,6 @@ class ClientSettingsDialog(QDialog):
         
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
-
-    def create_pages(self):
-        # Добавляем "Обзор" как первую страницу
-        pages = {
-            "Обзор": self.create_overview_page,
-            "Основные": self.create_general_page,
-            "Уведомления": self.create_notifications_page,
-            "Горячие клавиши": self.create_shortcuts_page,
-            "Диагностика": self.create_diagnostics_page,
-            "Логирование": self.create_logging_page,
-            "СОЕДИНЕНИЕ": self.create_server_settings_page
-        }
-        
-        for name, create_func in pages.items():
-            page = create_func()
-            self.stacked_widget.addWidget(page)
-            self.nav_list.addItem(name)
             
     def create_overview_page(self):
         """Создает стартовую 'обзорную' страницу."""
@@ -726,52 +709,6 @@ class ClientSettingsDialog(QDialog):
         layout.addRow(notes)
         return page
 
-    def load_settings(self):
-        s = self.settings
-        self.ui_show_on_start_check.setChecked(s.value("ui/showMainWindowOnStart", True, type=bool))
-        self.ui_on_top_check.setChecked(s.value("ui/mainWindowOnTop", False, type=bool))
-        self.autostart_check.setChecked(
-            is_autostart_enabled_for_current_app() if is_windows() else s.value("startup/enabled", False, type=bool)
-        )
-        self.notif_on_finish_check.setChecked(s.value("notifications/pushOnCommandFinish", True, type=bool))
-        self.notif_on_error_check.setChecked(s.value("notifications/pushOnError", True, type=bool))
-        self.shortcuts_enabled_check.setChecked(s.value("shortcuts/Enabled", True, type=bool))
-        self.diag_popup_check.setChecked(s.value("diag/reportInPopup", True, type=bool))
-        self.auto_recovery_check.setChecked(s.value("diag/autoRecoveryNetwork", False, type=bool))
-        self.log_level_combo.setCurrentText(self.__humanize_log_level(s.value("logging/level", "INFO", type=str)))
-        self.log_size_spin.setValue(s.value("logging/maxLogFolderSizeMB", 100, type=int))
-        self.confirm_admin_requests_check.setChecked(s.value("admin/confirmPrivilegedRequests", True, type=bool))
-
-        default_path = os.path.join(os.path.expanduser('~'), 'Pictures')
-        self.screenshot_folder_input.setText(s.value("screenshots/savePath", default_path, type=str))
-
-    def save_settings(self):
-        s = self.settings
-        s.setValue("ui/showMainWindowOnStart", self.ui_show_on_start_check.isChecked())
-        s.setValue("ui/mainWindowOnTop", self.ui_on_top_check.isChecked())
-        s.setValue("startup/enabled", self.autostart_check.isChecked())
-        s.setValue("notifications/pushOnCommandFinish", self.notif_on_finish_check.isChecked())
-        s.setValue("notifications/pushOnError", self.notif_on_error_check.isChecked())
-        s.setValue("shortcuts/Enabled", self.shortcuts_enabled_check.isChecked())
-        s.setValue("diag/reportInPopup", self.diag_popup_check.isChecked())
-        if is_linux():
-            s.setValue("diag/autoRecoveryNetwork", self.auto_recovery_check.isChecked())
-        s.setValue("screenshots/savePath", self.screenshot_folder_input.text())
-        s.setValue("admin/confirmPrivilegedRequests", self.confirm_admin_requests_check.isChecked())
-
-        s.setValue("logging/maxLogFolderSizeMB", self.log_size_spin.value())
-        log_level = self.__dehumanize_log_level(self.log_level_combo.currentText())
-        set_global_log_level(log_level)
-        s.setValue("logging/level", log_level)
-
-        if is_windows():
-            set_autostart_enabled(self.autostart_check.isChecked())
-            s.setValue("startup/enabled", is_autostart_enabled_for_current_app())
-
-        config = self.__get_config_from_form()
-        if config:
-            save_config(config)
-
     def connect_signals(self):
         self.nav_list.currentRowChanged.connect(self.stacked_widget.setCurrentIndex)
         self.log_size_spin.valueChanged.connect(self.on_restart_setting_changed)
@@ -813,7 +750,8 @@ class ClientSettingsDialog(QDialog):
         self.auto_recovery_check.setChecked(s.value("diag/autoRecoveryNetwork", False, type=bool))
         self.log_level_combo.setCurrentText(self.__humanize_log_level(s.value("logging/level", "INFO", type=str)))
         self.log_size_spin.setValue(s.value("logging/maxLogFolderSizeMB", 100, type=int))
-        
+        self.confirm_admin_requests_check.setChecked(s.value("admin/confirmPrivilegedRequests", True, type=bool))
+
         default_path = os.path.join(os.path.expanduser('~'), 'Pictures')
         self.screenshot_folder_input.setText(s.value("screenshots/savePath", default_path, type=str))
 
@@ -829,6 +767,7 @@ class ClientSettingsDialog(QDialog):
         if is_linux():
             s.setValue("diag/autoRecoveryNetwork", self.auto_recovery_check.isChecked())
         s.setValue("screenshots/savePath", self.screenshot_folder_input.text())
+        s.setValue("admin/confirmPrivilegedRequests", self.confirm_admin_requests_check.isChecked())
 
         # Логи
         s.setValue("logging/maxLogFolderSizeMB", self.log_size_spin.value())

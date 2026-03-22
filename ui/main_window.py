@@ -130,60 +130,6 @@ class MainWindow(QMainWindow):
             self.hide()
         else:
             self.show()
-    
-    def init_toolbar(self):
-        self.toolbar = QToolBar("Основные действия")
-        self.addToolBar(self.toolbar)
-        self.toolbar.setMovable(False)
-
-        test_connection_button = QPushButton("Проверить соединение")
-        test_connection_button.setToolTip("Выполнить проверку соединения с сервером")
-        test_connection_button.clicked.connect(self.switch_to_diagnostic_layout_and_start)
-        self.toolbar.addWidget(test_connection_button)
-
-        self.toolbar_send_log_button = QPushButton("Отправить лог сессии")
-        self.toolbar_send_log_button.clicked.connect(self.handle_toolbar_send_log)
-        self.toolbar_send_log_button.setToolTip("Отправить журнал работы на сервер")
-        self.toolbar.addWidget(self.toolbar_send_log_button)
-
-        client_config_button = QPushButton("Настройки Агента")
-        client_config_button.setToolTip("Изменение различных параметров, которые отвечают за работу Вашего агента.")
-        client_config_button.clicked.connect(self.update_client_config)
-        self.toolbar.addWidget(client_config_button)
-
-        self.restart_button = QPushButton("Перезапустить Агента")
-        self.restart_button.setToolTip("ПО Агента будет перезапущено. Во время перезапуска будут проверены и установлены последние обновления.")
-        self.restart_button.clicked.connect(lambda: self.restart_app(True, "Требование пользователя."))
-        self.toolbar.addWidget(self.restart_button)
-
-        hide_window_button = QPushButton("Скрыть это окно")
-        hide_window_button.setToolTip("Скрывает текущее меню в трей")
-        hide_window_button.clicked.connect(self.hide)
-        self.toolbar.addWidget(hide_window_button)
-        
-        # Добавляем кнопку для переключения на новый layout
-        self.switch_layout_button = QPushButton("О PLACS")
-        self.switch_layout_button.setToolTip("Коротко о том что такое PLACS агент и зачем он тебе!")
-        self.switch_layout_button.clicked.connect(lambda: self.switch_layout(3)) # Инициируем окно "о программе"
-        self.toolbar.addWidget(self.switch_layout_button)
-
-        self.service_button = QPushButton("Сервисный режим")
-        self.service_button.clicked.connect(self.toggle_service_mode)
-        self.service_button.setVisible(False)  # Кнопка по умолчанию скрыта
-        self.toolbar.addWidget(self.service_button)
-
-        # Кнопка VPN сетей
-        self.vpn_button = QPushButton("VPN Сети")
-        self.vpn_button.setToolTip("Просмотр и подключение к VPN сетям")
-        self.vpn_button.clicked.connect(self.show_vpn_layout)
-        self.toolbar.addWidget(self.vpn_button)
-
-        # Привязываем шорткат CapsLock+A к вызову сервисного режима
-        self.service_shortcut = QShortcut(QKeySequence("Shift+A"), self)
-        self.service_shortcut.activated.connect(self.toggle_service_mode)
-
-        # По умолчанию тулбар отключен, он появится автоматически после завершения запуска
-        self.toolbar.hide()
 
     # ------------------------ VPN LAYOUT ------------------------
     def init_vpn_layout(self):
@@ -472,21 +418,7 @@ class MainWindow(QMainWindow):
         left_pane.setObjectName("LeftPane")
         left_pane.setFixedWidth(350)
         bb_blocks_layout = QVBoxLayout(left_pane)
-        bb_blocks_layout.addStretch(1)
-
-        # Оправдания почему долго
-        WHYYY_label = QLabel("<h2 style=\"font-weight: normal;\">Простите! Ожидаю безопасного отключения(</h2>")
-        WHYYY_label.setWordWrap(True)
-        WHYYY_label.setAlignment(Qt.AlignCenter)
-        WHYYY_label.setObjectName("LeftPaneNoBG")
-        bb_blocks_layout.addWidget(WHYYY_label)
-
-        whot_i_need_label = QLabel("<h3 style=\"font-weight: normal;\">Чтобы ничего не сломалось лучше дождаться момента, когда все мои подсистемы завершат свою работу~</h3>")
-        whot_i_need_label.setWordWrap(True)
-        whot_i_need_label.setAlignment(Qt.AlignCenter)
-        whot_i_need_label.setObjectName("LeftPaneNoBG")
-        bb_blocks_layout.addWidget(whot_i_need_label)
-        bb_blocks_layout.addStretch(1)
+        bb_blocks_layout.addStretch()
 
         # Анимация
         spiner_label = QLabel(self)
@@ -496,7 +428,7 @@ class MainWindow(QMainWindow):
         spiner_label.setAlignment(Qt.AlignCenter)
         spiner_label.setObjectName("LeftPaneNoBG")
         bb_blocks_layout.addWidget(spiner_label)
-        bb_blocks_layout.addStretch(2)
+        bb_blocks_layout.addStretch()
 
         # Правая часть с анимацией и большими буквами
         right_pane = QWidget()
@@ -1138,15 +1070,12 @@ class MainWindow(QMainWindow):
         button.setEnabled(False)
         QApplication.processEvents()  # Заставляем UI немедленно обновиться
 
-        # Путь к файлу лога текущей сессии берем прямо из модуля логгера
-        log_path = log.LOG_FILE_PATH
-
         try:
-            with open(log_path, 'r', encoding='utf-8') as f:
+            with open(self.log_path, 'r', encoding='utf-8') as f:
                 log_text = f.read()
                 
         except Exception as e:
-            QMessageBox.critical(self, "Ошибка чтения файла", f"Не удалось прочитать файл лога: {log_path}\n\n{e}")
+            QMessageBox.critical(self, "Ошибка чтения файла", f"Не удалось прочитать файл лога: {self.log_path}\n\n{e}")
             # Даже если ошибка, блокируем кнопку, чтобы не спамили
             button.setText("Ошибка чтения")
             button.setToolTip("Подождите 10 секунд перед повторной отправкой журналов")
@@ -1527,7 +1456,7 @@ class MainWindow(QMainWindow):
         # Обновляем текст
         self.exit_label.setText(f"<h1>{title}</h1>")
         if reason:
-            self.exit_reason.setText(f"<i style=\"font-weight: normal;margin: 3px;font-size: 16px;\">({reason})</i>")
+            self.exit_reason.setText(f"<p style=\"margin: 3px;font-size: 16px; font-family: 'Monospace';\">({reason})</p>")
 
         # Обновляем картинку
         collar_man_pic = QPixmap(get_random_file_path("ui/media/mascot_img/sleep", ".png"))
@@ -1564,21 +1493,17 @@ class MainWindow(QMainWindow):
             return
 
         self._approval_dialog_open = True
-        html = f"""
-        <div style="font-family:'Segoe UI',sans-serif;">
-            <p>{request.intro}</p>
-            <p><b>{request.action_description}</b></p>
-            {request.details_html}
-        </div>
-        """
-        reply = QMessageBox.question(
-            self,
-            request.title,
-            html,
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        request.approved = reply == QMessageBox.Yes
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(request.title)
+        dialog.setTextFormat(Qt.RichText)
+        dialog.setText(request.to_html())
+        dialog.setIcon(QMessageBox.Question)
+        allow_button = dialog.addButton("Разрешить", QMessageBox.YesRole)
+        deny_button = dialog.addButton("Не сейчас", QMessageBox.NoRole)
+        dialog.setDefaultButton(allow_button)
+        dialog.exec_()
+
+        request.approved = dialog.clickedButton() == allow_button
         request.event.set()
         self._approval_dialog_open = False
 
