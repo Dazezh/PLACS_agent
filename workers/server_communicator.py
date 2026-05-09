@@ -2,13 +2,21 @@ import requests
 import json
 import logging
 
-from core.config_manager import get_server_url, get_agent_token
+from core.config_manager import get_server_url, get_agent_token, get_debug_state
 from core.error_types import ErrorType
+from core.ver import __version__
+from core.utils import get_os_string
 
 from urllib.parse import urljoin
 
 # Получаем настроенный логгер
 log = logging.getLogger('ServerCommunicator')
+os = get_os_string()
+run_type = "Standalone"
+if get_debug_state():
+    run_type = "Development"
+
+log.info(f"Инициализация ServerCommunicator для ОС: {os}, версии агента: {__version__} ({run_type})")
 
 def _get_headers(config_for_test={}):
     """Формирует заголовки с токеном аутентификации."""
@@ -16,7 +24,7 @@ def _get_headers(config_for_test={}):
     if not token:
         log.error("Токен агента не найден в конфигурации.")
         return {} # Возвращаем пустые заголовки, если токена нет
-    return {"X-Auth-Token": token, "Content-Type": "application/json"}
+    return {"X-Auth-Token": token, "X-Agent-Version": __version__, "X-Agent-OS": os, "X-Agent-Run-Type": run_type, "Content-Type": "application/json"}
 
 def get_commands():
     """Запрашивает список команд у сервера.

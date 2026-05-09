@@ -154,6 +154,12 @@ def is_mac():
     """Проверяет, является ли текущая ОС macOS."""
     return sys.platform.startswith('darwin')
 
+def get_os_string():
+    if sys.platform.startswith('linux'): return 'linux'
+    elif sys.platform.startswith('win'): return 'windows'
+    elif sys.platform.startswith('darwin'): return 'macos'
+    else: return 'unknown'
+    
 
 def get_system_specs():
     """Собирает технические характеристики устройства.

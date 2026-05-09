@@ -1501,6 +1501,7 @@ class MainWindow(QMainWindow):
         allow_button = dialog.addButton("Разрешить", QMessageBox.YesRole)
         deny_button = dialog.addButton("Не сейчас", QMessageBox.NoRole)
         dialog.setDefaultButton(allow_button)
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowStaysOnTopHint) # Всегда поверх других окон
         dialog.exec_()
 
         request.approved = dialog.clickedButton() == allow_button

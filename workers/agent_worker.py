@@ -24,6 +24,8 @@ from core.utils import (
 )
 from core.error_types import ErrorType
 
+from core.config_manager import get_debug_state
+
 log = logging.getLogger("AgentWorker")
 sysmon_log = logging.getLogger("SystemMonitor")
 
@@ -216,12 +218,25 @@ class AgentWorker(QObject):
                         elif command_type == 'custom':
                             message = command_data.get('command_text')
                             if message == "upgrade":
-                                self.start_update.emit(True, "Обновление...")
-                                status, output = "success", "Сигнал обновления отправлен."
+                                if get_debug_state():
+                                    self.status_update.emit("Получена команда обновления, но так как включён DEBUG режим, я не запущу обновление. Выключи DEBUG в настройках и попробуй снова.")
+                                    status, output = "error", "DEBUG режим включён - обновление не запущено."
+
+                                else:
+                                    self.start_update.emit(True, "Обновление...")
+                                    status, output = "success", "Сигнал обновления отправлен."
                             
                             elif message == "reinstall":
-                                self.start_update.emit(False, "Переустановка...")
-                                status, output = "success", "Сигнал переустановки отправлен."
+                                if get_debug_state():
+                                    self.status_update.emit("Получена команда переустановки, но так как включён DEBUG режим, я не запущу переустановку. Выключи DEBUG в настройках и попробуй снова.")
+                                    status, output = "error", "DEBUG режим включён - переустановка не запущена."
+                                else:
+                                    self.start_update.emit(False, "Переустановка...")
+                                    status, output = "success", "Сигнал переустановки отправлен."
+                            
+                            else:
+                                self.status_update.emit(f"<p>Получена неизвестная кастомная команда ID:<b>{command_id}</b></p><br><p>Текст команды:<b>{message}</b></p>")
+                                status, output = "error", f"Неизвестная кастомная команда: {message}"
                         
                         else: # Обычная команда (не апплет)
                             self.status_update.emit(f"<p>Выполняю команду ID:<b>{command_id}</b></p><br><p>Тип:<b>{command_type}</b></p>")
