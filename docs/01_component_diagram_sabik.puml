@@ -1,0 +1,155 @@
+@startuml SABIK_Component_Diagram
+
+title
+<color:#B6655D>SABIK / STRUCTURE</color>
+<color:#B6655D>ZEZH / 418</color>
+end title
+
+skinparam shadowing false
+skinparam roundcorner 5
+skinparam dpi 150
+
+skinparam defaultFontName "Arial"
+skinparam defaultFontColor #242424
+skinparam defaultFontSize 12
+
+skinparam titleFontName "Arial"
+skinparam titleFontSize 22
+skinparam titleFontColor #242424
+
+skinparam linetype ortho
+skinparam nodesep 45
+skinparam ranksep 55
+
+skinparam ArrowColor #817B77
+skinparam ArrowThickness 1
+
+skinparam entity {
+    BackgroundColor #FAF9F7
+    BorderColor #C9C5C1
+    FontColor #242424
+}
+
+hide circle
+
+' === ВНЕШНИЕ СУЩНОСТИ ===
+entity "PLACS Server\n(HTTP REST API)" as PLACS_SERVER <<external>>
+
+entity "Keyring\n(Windows Credential Manager)" as KEYRING <<external>>
+entity "Файловая система\n(logs/, .tmp/, agent_config.json)" as FILESYSTEM <<external>>
+entity "Пользователь" as USER <<external>>
+
+' === GUI LAYER ===
+package "UI Layer (Главный поток Qt)" as UI_LAYER {
+    entity "MainWindow\n(QMainWindow)" as MAIN_WINDOW
+    entity "SystemTrayApp\n(QSystemTrayIcon)" as TRAY_ICON
+    entity "ConfigDialog\n(QDialog)" as CONFIG_DIALOG
+    entity "ClientSettingsDialog\n(QDialog)" as CLIENT_SETTINGS
+    entity "SetOnDisplayWindow\n(QWidget)" as DISPLAY_WIN
+    entity "ServiceSetupWindow\n(QDialog)" as SERVICE_SETUP
+}
+
+' === CONFIG & STATE ===
+package "Core Layer" as CORE_LAYER {
+    entity "ErrorStateManager\n(QObject)" as ERROR_MGR
+    entity "modules: config_manager\n(functions)" as CONFIG_MGR
+    entity "modules: logger\n(functions)" as LOGGER_FUNC
+    entity "modules: utils\n(functions)" as UTILS
+    entity "ApprovalBroker\n(thread-safe queue)" as APPROVAL_BROKER
+    entity "SingleInstanceLock" as SINGLE_LOCK
+    entity "modules: windows_autostart\n(functions)" as AUTOSTART
+}
+
+' === WORKERS (QThread) ===
+package "Workers (Фоновые потоки)" as WORKER_LAYER {
+    entity "AgentWorker\n(QObject, thread: agent_thread)" as AGENT_WORKER <<thread>>
+    entity "SystemMonitor\n(QObject, thread: system_monitor_thread)" as SYS_MONITOR <<thread>>
+    entity "DebugPultDialog\n(QDialog, только DEBUG)" as DEBUG_PULT <<conditional>>
+}
+
+' === СЕТЕВОЙ СЛОЙ ===
+package "Network Layer" as NET_LAYER {
+    entity "server_communicator\n(functions)" as SERVER_COMM
+    entity "command_executor\n(functions)" as COMMAND_EXEC
+}
+
+' === ХРАНИЛИЩЕ ===
+entity "QSettings\n(PLACS/Agent)" as QSETTINGS <<storage>>
+
+' ========================================
+' СВЯЗИ
+' ========================================
+
+' MAIN_WINDOW зависимости
+MAIN_WINDOW --> CONFIG_DIALOG : создаёт при старте
+MAIN_WINDOW --> CLIENT_SETTINGS : открывает по запросу
+MAIN_WINDOW --> DISPLAY_WIN : создаёт для set_on_display
+MAIN_WINDOW --> SERVICE_SETUP : создаёт для настройки службы
+MAIN_WINDOW --> APPROVAL_BROKER : process_pending_privileged_requests()
+MAIN_WINDOW --> ERROR_MGR : сигнал → update_ui_for_error_state
+MAIN_WINDOW --> UTILS : get_username(), get_current_time(), get_random_file_path()
+
+' TRAY_ICON
+TRAY_ICON --> MAIN_WINDOW : управляет видимостью
+USER --> TRAY_ICON : левый клик / контекстное меню
+
+' CONFIG_DIALOG → CONFIG_MGR
+CONFIG_DIALOG --> CONFIG_MGR : set_config()
+CLIENT_SETTINGS --> CONFIG_MGR : save_config()
+CLIENT_SETTINGS --> QSETTINGS : save_settings()
+CLIENT_SETTINGS --> AUTOSTART : set_autostart_enabled()
+
+' ERROR_MGR
+ERROR_MGR --> UTILS : (нет)
+ERROR_MGR --> LOGGER_FUNC : логирование ошибок
+
+' AGENT_WORKER → SERVER_COMM
+AGENT_WORKER --> SERVER_COMM : get_commands(), get_me(), report_command_output(), send_log_to_server()
+AGENT_WORKER --> COMMAND_EXEC : execute_command()
+AGENT_WORKER --> CONFIG_MGR : get_polling_interval(), get_debug_state()
+AGENT_WORKER --> UTILS : sanitize_filename(), clear_folder()
+AGENT_WORKER --> FILESYSTEM : запись .ovpn конфигов в .tmp/
+
+' SYS_MONITOR → SERVER_COMM
+SYS_MONITOR --> SERVER_COMM : report_specs(), report_metrics()
+SYS_MONITOR --> UTILS : get_system_specs(), get_system_metrics()
+SYS_MONITOR --> QSETTINGS : monitoring/enabled
+
+' SERVER_COMM → PLACS_SERVER
+SERVER_COMM --> PLACS_SERVER : HTTP (REST API)
+
+' CONFIG_MGR → KEYRING
+CONFIG_MGR --> KEYRING : get_password(), set_password()
+
+' LOGGER_FUNC → FILESYSTEM
+LOGGER_FUNC --> FILESYSTEM : запись agent_*.log в logs/
+
+' COMMAND_EXEC → внешние
+COMMAND_EXEC --> FILESYSTEM : чтение .ovpn конфигов
+COMMAND_EXEC --> APPROVAL_BROKER : submit_and_wait() для привилегированных действий
+
+' MAIN_WINDOW связи с QSETTINGS
+MAIN_WINDOW --> QSETTINGS : читает ui/mainWindowOnTop и др.
+
+' DEBUG_PULT (условно)
+MAIN_WINDOW --> DEBUG_PULT : создаёт если DEBUG_MODE
+
+' Сигналы между потоками (Qt Signal/Slot)
+AGENT_WORKER -[#B6655D]-> MAIN_WINDOW : signal: status_update
+AGENT_WORKER -[#B6655D]-> ERROR_MGR : signal: error_occurred
+AGENT_WORKER -[#B6655D]-> MAIN_WINDOW : signal: show_display_message_signal
+AGENT_WORKER -[#B6655D]-> MAIN_WINDOW : signal: vpn_configs_updated
+AGENT_WORKER -[#B6655D]-> MAIN_WINDOW : signal: vpn_operation_status
+AGENT_WORKER -[#B6655D]-> TRAY_ICON : signal: command_completed
+
+SYS_MONITOR -[#B6655D]-> MAIN_WINDOW : signal: status_update
+SYS_MONITOR -[#B6655D]-> ERROR_MGR : signal: error_occurred
+
+ERROR_MGR -[#B6655D]-> MAIN_WINDOW : signal: ui_state_changed
+ERROR_MGR -[#B6655D]-> MAIN_WINDOW : signal: last_error_message_changed
+
+MAIN_WINDOW -[#B6655D]-> AGENT_WORKER : signal: request_vpn_refresh
+MAIN_WINDOW -[#B6655D]-> AGENT_WORKER : signal: request_vpn_connect
+MAIN_WINDOW -[#B6655D]-> AGENT_WORKER : signal: request_vpn_disconnect
+
+@enduml

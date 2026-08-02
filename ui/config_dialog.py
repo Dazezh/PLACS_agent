@@ -1,13 +1,16 @@
 import os
 
-from PyQt5.QtWidgets import (QDialog, QWidget, QHBoxLayout, QVBoxLayout, QListWidget, 
+from PyQt6.QtWidgets import (QDialog, QWidget, QHBoxLayout, QVBoxLayout, QListWidget, 
                              QStackedWidget, QDialogButtonBox, QCheckBox, QSpinBox, 
                              QComboBox, QLabel, QFormLayout, QMessageBox, QLineEdit,
                              QPushButton, QFileDialog, QTextEdit)
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtCore import Qt, QSettings, QCoreApplication
+from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import Qt, QSettings, QCoreApplication
 
-from core.config_manager import get_agent_token, get_polling_interval, get_server_url, load_config, save_config, get_debug_state
+from core.config_manager import (get_agent_token, get_polling_interval, get_server_url, 
+                                 load_config, save_config, get_debug_state,
+                                 server_url_is_constant, agent_token_is_constant, 
+                                 polling_interval_is_constant)
 
 from core.logger import set_global_log_level
 from core.windows_service_manager import (
@@ -47,10 +50,10 @@ class ConfigDialog(QDialog):
         try:
             pixmap = QPixmap(icon_path)
             if not pixmap.isNull():
-                scaled_pixmap = pixmap.scaled(150, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                scaled_pixmap = pixmap.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
                 icon_label = QLabel()
                 icon_label.setPixmap(scaled_pixmap)
-                icon_label.setAlignment(Qt.AlignCenter)
+                icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 layout.addWidget(icon_label)
             else:
                 print(f"Ошибка: Не удалось загрузить изображение '{icon_path}'. Проверьте путь и формат.")
@@ -58,7 +61,7 @@ class ConfigDialog(QDialog):
             print(f"Исключение при загрузке иконки в ConfigDialog: {e}")
 
         title_label = QLabel("<h3>«Привязка» к серверу PLACS</h3>")
-        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
 
         layout.addSpacing(20)
@@ -91,6 +94,16 @@ class ConfigDialog(QDialog):
             self.server_input.setPlaceholderText(f"Сейчас: {get_server_url()}")
             self.token_input.setPlaceholderText(f"Сейчас: {get_agent_token()[:12]}...")
             self.polling_interval_spinbox.setValue(get_polling_interval())
+
+            if server_url_is_constant():
+                self.server_input.setDisabled(True)
+                self.server_input.setToolTip("Адрес сервера задан администратором и не может быть изменён.")
+            if agent_token_is_constant():
+                self.token_input.setDisabled(True)
+                self.token_input.setToolTip("Токен клиента задан администратором и не может быть изменён.")
+            if polling_interval_is_constant():
+                self.polling_interval_spinbox.setDisabled(True)
+                self.polling_interval_spinbox.setToolTip("Интервал опроса задан администратором и не может быть изменён.")
 
         button_layout = QHBoxLayout()
         self.save_button = QPushButton("Сохранить и запустить")
@@ -146,9 +159,9 @@ class ClientSettingsDialog(QDialog):
     Обновленное диалоговое окно настроек с обзорной панелью и 
     дополнительными настройками из предоставленного файла.
     """
-    SettingsSaved = QDialog.Accepted       # Просто сохранено, значение = 1
-    RestartRequired = QDialog.Accepted + 1 # Сохранено и нужен перезапуск, значение = 2
-    ServiceDisabled = QDialog.Accepted + 2
+    SettingsSaved = QDialog.DialogCode.Accepted      # Просто сохранено, значение = 1
+    RestartRequired = QDialog.DialogCode.Accepted + 1 # Сохранено и нужен перезапуск, значение = 2
+    ServiceDisabled = QDialog.DialogCode.Accepted + 2
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -180,37 +193,52 @@ class ClientSettingsDialog(QDialog):
         content_layout.addWidget(self.nav_list)
         content_layout.addWidget(self.stacked_widget)
         
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        button_box.button(QDialogButtonBox.Ok).setText("Применить")
-        button_box.button(QDialogButtonBox.Cancel).setText("Отмена")
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        button_box.button(QDialogButtonBox.StandardButton.Ok).setText("Применить")
+        button_box.button(QDialogButtonBox.StandardButton.Cancel).setText("Отмена")
         
         main_layout.addLayout(content_layout)
         main_layout.addWidget(button_box)
         
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
+
+    def create_pages(self):
+        pages = {
+            "Обзор": self.create_overview_page,
+            "Основные": self.create_general_page,
+            "Уведомления": self.create_notifications_page,
+            "Логирование": self.create_logging_page,
+            "Фоновая служба": self.create_background_service_page,
+            "СОЕДИНЕНИЕ": self.create_server_settings_page,
+        }
+
+        for name, create_func in pages.items():
+            page = create_func()
+            self.stacked_widget.addWidget(page)
+            self.nav_list.addItem(name)
             
     def create_overview_page(self):
         """Создает стартовую 'обзорную' страницу."""
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setAlignment(Qt.AlignCenter)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         title = QLabel("<h1>Настройки клиента</h1>")
-        title.setAlignment(Qt.AlignCenter)
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         # Та самая картинка для тупого пользователя
         pixmap = QPixmap('ui/media/img/colar_man/SILLY_COLLAR_MAN.png')
         icon_label = QLabel()
         if not pixmap.isNull():
-            icon_label.setPixmap(pixmap.scaled(250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        icon_label.setAlignment(Qt.AlignCenter)
+            icon_label.setPixmap(pixmap.scaled(250, 250, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         description = QLabel(
             "Здесь ты можешь настроить поведение агента PLACS.\n"
             "Выбери интересующую тебя категорию в меню слева."
         )
-        description.setAlignment(Qt.AlignCenter)
+        description.setAlignment(Qt.AlignmentFlag.AlignCenter)
         description.setWordWrap(True)
 
         layout.addStretch()
@@ -228,18 +256,18 @@ class ClientSettingsDialog(QDialog):
         # --- СЛОЙ 1: Предупреждение ---
         page_warning = QWidget()
         warning_layout = QVBoxLayout(page_warning)
-        warning_layout.setAlignment(Qt.AlignCenter)
+        warning_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # 1. Заголовок "Ахтунг!"
         achtung_label = QLabel("<p style='color: #ff3333;font-size: 28px;'>Слушай сюда.<br>Это моё соединение с Сабиком.</p>")
-        achtung_label.setAlignment(Qt.AlignCenter)
+        achtung_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # 2. Картинка Менеджера
         manager_pixmap = QPixmap('ui/media/mascot_img/manager/MANAGER_POINTING.png') # Твой файл
         manager_label = QLabel()
         if not manager_pixmap.isNull():
-            manager_label.setPixmap(manager_pixmap.scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        manager_label.setAlignment(Qt.AlignCenter)
+            manager_label.setPixmap(manager_pixmap.scaled(200, 200, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        manager_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # 3. Текст предупреждения
         warning_text_label = QLabel(
@@ -247,7 +275,7 @@ class ClientSettingsDialog(QDialog):
             " И угадай, кто будет виноват? <b>Не я.</b></p>"
         )
         warning_text_label.setWordWrap(True)
-        warning_text_label.setAlignment(Qt.AlignCenter)
+        warning_text_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         # 4. Единственная кнопка согласия
         proceed_button = QPushButton("Я осознаю риск и хочу продолжить")
@@ -318,6 +346,16 @@ class ClientSettingsDialog(QDialog):
             self.token_input.setPlaceholderText(f"Сейчас: {get_agent_token()[:12]}...")
             self.polling_interval_spinbox.setValue(get_polling_interval())
 
+            if server_url_is_constant():
+                self.server_input.setDisabled(True)
+                self.server_input.setToolTip("Адрес сервера задан администратором и не может быть изменён.")
+            if agent_token_is_constant():
+                self.token_input.setDisabled(True)
+                self.token_input.setToolTip("Токен клиента задан администратором и не может быть изменён.")
+            if polling_interval_is_constant():
+                self.polling_interval_spinbox.setDisabled(True)
+                self.polling_interval_spinbox.setToolTip("Интервал опроса задан администратором и не может быть изменён.")
+
         settings_layout.addRow(check_layout)
 
         # Добавляем поле для вывода результатов диагностики, по умолчанию пустое
@@ -331,42 +369,6 @@ class ClientSettingsDialog(QDialog):
         page_stack.addWidget(page_settings) # Индекс 1
 
         return page_stack
-
-    def create_general_page(self):
-        page = QWidget()
-        layout = QFormLayout(page)
-        layout.setRowWrapPolicy(QFormLayout.WrapAllRows)
-        
-        # --- Настройки ---
-        self.ui_show_on_start_check = QCheckBox("Показывать основное окно при каждом запуске")
-        self.ui_on_top_check = QCheckBox("Держать окно поверх всех других")
-        
-        self.screenshot_folder_input = QLineEdit()
-        self.screenshot_folder_input.setReadOnly(True)
-        browse_button = QPushButton("Выбрать...")
-        browse_button.clicked.connect(self._select_screenshot_folder)
-        
-        screenshot_layout = QHBoxLayout()
-        screenshot_layout.addWidget(self.screenshot_folder_input)
-        screenshot_layout.addWidget(browse_button)
-
-        # --- Заметка для "тупого" ---
-        notes = QLabel(
-            "<p>Это базовые настройки поведения окна. Здесь нет ничего, что можно было бы сломать.</p>"
-            "<p>Если тебе не нравится, что я появляюсь на экране при каждом запуске компьютера... Чтож, тут ты можешь скрыть меня в нижней панели.</p>"
-            "<p><b>Папка для скриншотов:</b> Мы не будем воровать твои личные фотографии, честно. "
-            "Просто укажи, куда складывать снимки экрана, которые ты делаешь с помощью горячих клавиш.</p>"
-        )
-        notes.setWordWrap(True) # Включаем перенос слов
-
-        # --- Компоновка ---
-        layout.addRow(QLabel("<h3>Поведение окна</h3>"))
-        layout.addRow(self.ui_show_on_start_check)
-        layout.addRow(self.ui_on_top_check)
-        layout.addRow("Папка для скриншотов:", screenshot_layout)
-        layout.addRow(notes)
-        
-        return page
 
     def create_notifications_page(self):
         page = QWidget()
@@ -393,66 +395,6 @@ class ClientSettingsDialog(QDialog):
 
         return page
         
-    def create_diagnostics_page(self):
-        page = QWidget()
-        layout = QFormLayout(page)
-
-        # --- Настройки ---
-        self.diag_popup_check = QCheckBox("Показывать отчет в отдельном окне")
-        self.auto_recovery_check = QCheckBox("Пытаться исправить сетевые проблемы (только Linux)")
-
-        if not is_linux():
-            self.auto_recovery_check.setEnabled(False)
-            self.auto_recovery_check.setToolTip("Эта опция доступна только в Linux-системах")
-            
-        # --- Заметка для "тупого" ---
-        notes = QLabel(
-            "<p>Я постоянно слежу за своим состоянием. Эти настройки лишь определяют, <b>как</b> я буду тебе об этом докладывать.</p>"
-            "<ul>"
-            "<li><b>Отчет в отдельном окне:</b> Если включено, после диагностики появится окно с результатами, которое придется закрыть. Если выключено — я просто покажу уведомление.</li>"
-            "<li><b>Пытаться исправить:</b> Если что-то не так с сетью, я могу попытаться перезапустить ее сам. <b>Внимание:</b> это может на несколько секунд прервать твое интернет-соединение.</li>"
-            "</ul>"
-        )
-        notes.setWordWrap(True)
-
-        # --- Компоновка ---
-        layout.addRow(QLabel("<h3>Поведение диагностики</h3>"))
-        layout.addRow(self.diag_popup_check)
-        layout.addRow(self.auto_recovery_check)
-        layout.addRow(notes)
-        
-        return page
-
-    def create_shortcuts_page(self):
-        page = QWidget()
-        layout = QFormLayout(page)
-
-        # --- Настройки ---
-        self.shortcuts_enabled_check = QCheckBox("Включить глобальные сочетания клавиш (только Windows)")
-        self.shortcuts_restart_label = QLabel("Применится при перезапуске")
-        self.shortcuts_restart_label.setObjectName("RestartLabel")
-        self.shortcuts_restart_label.hide()
-
-        if is_linux():
-            self.shortcuts_enabled_check.setEnabled(False)
-            self.shortcuts_enabled_check.setChecked(False)
-            self.shortcuts_enabled_check.setToolTip("Эта опция доступна только в NT-системах")
-        
-        # --- Заметка для "тупого" ---
-        notes = QLabel(
-            "<p>Это главный рубильник для всех горячих клавиш в системе (например, для создания скриншотов).</p>"
-            "<p>Если эта галочка снята, никакие сочетания клавиш, связанные со мной, работать не будут. "
-            "Это полезно, если мои комбинации конфликтуют с твоими любимыми играми или программами.</p>"
-        )
-        notes.setWordWrap(True)
-
-        # --- Компоновка ---
-        layout.addRow(self.shortcuts_enabled_check) 
-        layout.addRow(self.shortcuts_restart_label)
-        layout.addRow(notes)
-        
-        return page
-    
     def create_logging_page(self):
         page = QWidget()
         layout = QFormLayout(page)
@@ -557,10 +499,10 @@ class ClientSettingsDialog(QDialog):
                 self,
                 "Предупреждение безопасности",
                 "Вы ввели адрес без HTTPS. Это небезопасно и может привести к перехвату данных.\n\nВы уверены, что хотите продолжить?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
             )
-            if reply == QMessageBox.No:
+            if reply == QMessageBox.StandardButton.No:
                 return
         
         return {
@@ -570,38 +512,21 @@ class ClientSettingsDialog(QDialog):
             "DEBUG": get_debug_state()
         }
 
-    def create_pages(self):
-        pages = {
-            "Обзор": self.create_overview_page,
-            "Основные": self.create_general_page,
-            "Уведомления": self.create_notifications_page,
-            "Горячие клавиши": self.create_shortcuts_page,
-            "Диагностика": self.create_diagnostics_page,
-            "Логирование": self.create_logging_page,
-            "Фоновая служба": self.create_background_service_page,
-            "СОЕДИНЕНИЕ": self.create_server_settings_page,
-        }
-
-        for name, create_func in pages.items():
-            page = create_func()
-            self.stacked_widget.addWidget(page)
-            self.nav_list.addItem(name)
-
     def create_background_service_page(self):
         page_stack = QStackedWidget()
 
         page_warning = QWidget()
         warning_layout = QVBoxLayout(page_warning)
-        warning_layout.setAlignment(Qt.AlignCenter)
+        warning_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         title = QLabel("<p style='color: #ff3333;font-size: 28px;'>Слушай сюда.<br>Это фоновая служба Сабика.</p>")
-        title.setAlignment(Qt.AlignCenter)
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         warning_text = QLabel(
             "<p style='color: #ff6666;font-size: 14px;'>Если выключить эту службу, агент потеряет безопасный путь для привилегированных команд. "
             "После отключения я сразу завершу работу приложения, чтобы не остаться в полусломанном состоянии.</p>"
         )
-        warning_text.setAlignment(Qt.AlignCenter)
+        warning_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         warning_text.setWordWrap(True)
 
         proceed_button = QPushButton("Я понимаю риск и хочу открыть настройки службы")
@@ -673,21 +598,12 @@ class ClientSettingsDialog(QDialog):
     def create_general_page(self):
         page = QWidget()
         layout = QFormLayout(page)
-        layout.setRowWrapPolicy(QFormLayout.WrapAllRows)
+        layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
 
         self.ui_show_on_start_check = QCheckBox("Показывать основное окно при каждом запуске")
         self.ui_on_top_check = QCheckBox("Держать окно поверх всех других")
         self.autostart_check = QCheckBox("Запускать агент автоматически при входе в Windows")
         self.confirm_admin_requests_check = QCheckBox("Спрашивать перед выполнением действий с правами администратора")
-
-        self.screenshot_folder_input = QLineEdit()
-        self.screenshot_folder_input.setReadOnly(True)
-        browse_button = QPushButton("Выбрать...")
-        browse_button.clicked.connect(self._select_screenshot_folder)
-
-        screenshot_layout = QHBoxLayout()
-        screenshot_layout.addWidget(self.screenshot_folder_input)
-        screenshot_layout.addWidget(browse_button)
 
         notes = QLabel(
             "<p>Здесь собраны базовые настройки интерфейса и поведения привилегированных действий.</p>"
@@ -705,20 +621,17 @@ class ClientSettingsDialog(QDialog):
         if is_linux():
             self.confirm_admin_requests_check.setEnabled(False)
         layout.addRow(self.confirm_admin_requests_check)
-        layout.addRow("Папка для скриншотов:", screenshot_layout)
         layout.addRow(notes)
         return page
 
     def connect_signals(self):
         self.nav_list.currentRowChanged.connect(self.stacked_widget.setCurrentIndex)
         self.log_size_spin.valueChanged.connect(self.on_restart_setting_changed)
-        self.shortcuts_enabled_check.stateChanged.connect(self.on_restart_setting_changed)
 
     def on_restart_setting_changed(self):
         sender = self.sender()
         self.restart_required_flag = True
         if sender == self.log_size_spin: self.log_size_restart_label.show()
-        elif sender == self.shortcuts_enabled_check: self.shortcuts_restart_label.show()
     
     def __dehumanize_log_level(self, level: str):
         log_level = {
@@ -745,15 +658,9 @@ class ClientSettingsDialog(QDialog):
         )
         self.notif_on_finish_check.setChecked(s.value("notifications/pushOnCommandFinish", True, type=bool))
         self.notif_on_error_check.setChecked(s.value("notifications/pushOnError", True, type=bool))
-        self.shortcuts_enabled_check.setChecked(s.value("shortcuts/Enabled", True, type=bool))
-        self.diag_popup_check.setChecked(s.value("diag/reportInPopup", True, type=bool))
-        self.auto_recovery_check.setChecked(s.value("diag/autoRecoveryNetwork", False, type=bool))
         self.log_level_combo.setCurrentText(self.__humanize_log_level(s.value("logging/level", "INFO", type=str)))
         self.log_size_spin.setValue(s.value("logging/maxLogFolderSizeMB", 100, type=int))
         self.confirm_admin_requests_check.setChecked(s.value("admin/confirmPrivilegedRequests", True, type=bool))
-
-        default_path = os.path.join(os.path.expanduser('~'), 'Pictures')
-        self.screenshot_folder_input.setText(s.value("screenshots/savePath", default_path, type=str))
 
     def save_settings(self):
         s = self.settings
@@ -762,11 +669,6 @@ class ClientSettingsDialog(QDialog):
         s.setValue("startup/enabled", self.autostart_check.isChecked())
         s.setValue("notifications/pushOnCommandFinish", self.notif_on_finish_check.isChecked())
         s.setValue("notifications/pushOnError", self.notif_on_error_check.isChecked())
-        s.setValue("shortcuts/Enabled", self.shortcuts_enabled_check.isChecked())
-        s.setValue("diag/reportInPopup", self.diag_popup_check.isChecked())
-        if is_linux():
-            s.setValue("diag/autoRecoveryNetwork", self.auto_recovery_check.isChecked())
-        s.setValue("screenshots/savePath", self.screenshot_folder_input.text())
         s.setValue("admin/confirmPrivilegedRequests", self.confirm_admin_requests_check.isChecked())
 
         # Логи
@@ -792,11 +694,6 @@ class ClientSettingsDialog(QDialog):
         if config:
             save_config(config)
         return True
-
-    def _select_screenshot_folder(self):
-        current_path = self.screenshot_folder_input.text() or os.path.expanduser('~')
-        folder = QFileDialog.getExistingDirectory(self, "Выберите папку для скриншотов", current_path)
-        if folder: self.screenshot_folder_input.setText(folder)
 
     def accept(self):
         if self.save_settings() is False:

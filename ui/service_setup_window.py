@@ -1,6 +1,6 @@
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtWidgets import (
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap
+from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -17,11 +17,11 @@ class ServiceSetupWindow(QDialog):
         super().__init__(parent)
         self.retry_mode = retry_mode
         self.setWindowTitle("Настройка службы PLACS")
-        self.setWindowState(self.windowState() | Qt.WindowFullScreen)
+        self.setWindowState(self.windowState() | Qt.WindowState.WindowFullScreen)
         self.setModal(True)
         self._accepted_setup = False
         self._init_ui()
-        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
         self.showFullScreen()
 
     def _build_copy(self):
@@ -85,14 +85,14 @@ class ServiceSetupWindow(QDialog):
 
         title = QLabel(f"<h1>{intro}</h1>")
         title.setObjectName("ServiceSetupTitle")
-        title.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         title.setWordWrap(True)
         left_layout.addWidget(title)
 
         description_scroll = QScrollArea()
         description_scroll.setObjectName("ServiceSetupScroll")
         description_scroll.setWidgetResizable(True)
-        description_scroll.setFrameShape(QScrollArea.NoFrame)
+        description_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
 
         description_widget = QWidget()
         description_layout = QVBoxLayout(description_widget)
@@ -135,13 +135,13 @@ class ServiceSetupWindow(QDialog):
         image_label.setObjectName("ServiceSetupImage")
         pixmap = QPixmap("ui/media/mascot_art/heart.png")
         if not pixmap.isNull():
-            image_label.setPixmap(pixmap.scaled(340, 340, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        image_label.setAlignment(Qt.AlignCenter)
+            image_label.setPixmap(pixmap.scaled(340, 340, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         right_layout.addWidget(image_label)
 
         caption = QLabel("<h2>Давай завершим настройку Сабика.</h2>")
         caption.setObjectName("ServiceSetupCaption")
-        caption.setAlignment(Qt.AlignCenter)
+        caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
         caption.setWordWrap(True)
         right_layout.addWidget(caption)
         right_layout.addStretch(1)

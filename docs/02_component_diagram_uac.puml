@@ -1,0 +1,114 @@
+@startuml UAC_Component_Diagram
+
+title
+<color:#B6655D>SUBIK / STRUCTURE</color>
+<color:#B6655D>ZEZH / 418</color>
+end title
+
+skinparam shadowing false
+skinparam roundcorner 5
+skinparam dpi 150
+
+skinparam defaultFontName "Arial"
+skinparam defaultFontColor #242424
+skinparam defaultFontSize 12
+
+skinparam titleFontName "Arial"
+skinparam titleFontSize 22
+skinparam titleFontColor #242424
+
+skinparam linetype ortho
+skinparam nodesep 45
+skinparam ranksep 55
+
+skinparam ArrowColor #817B77
+skinparam ArrowThickness 1
+
+skinparam entity {
+    BackgroundColor #FAF9F7
+    BorderColor #C9C5C1
+    FontColor #242424
+}
+
+hide circle
+
+' === ВНЕШНИЕ СУЩНОСТИ ===
+entity "SABIK\n(AgentWorker / CommandExecutor)" as SABIK <<external>>
+entity "Windows SCM\n(Service Control Manager)" as SCM <<external>>
+entity "Keyring\n(Windows Credential Manager)" as KEYRING <<external>>
+entity "Пользователь\n(через MainWindow)" as USER <<external>>
+
+' === SERVICE MANAGEMENT (в процессе SABIK) ===
+package "Service Manager (core/windows_service_manager.py)" as SVC_MGR {
+    entity "query_service_status()" as QUERY_SVC
+    entity "start_service()" as START_SVC
+    entity "install_service_cli()" as INSTALL_SVC
+    entity "disable_service_cli()" as DISABLE_SVC
+    entity "send_service_request()" as SEND_REQ
+    entity "run_elevated_helper()" as ELEVATED
+}
+
+' === SERVICE PROCESS (отдельный процесс) ===
+package "Windows Service Process\n(main.py --service-host)" as SVC_PROCESS {
+    entity "PLACSAgentWindowsService\n(win32serviceutil.ServiceFramework)" as WIN_SVC
+    entity "_ThreadedTCPServer\n(socketserver.ThreadingMixIn)" as TCP_SERVER
+    entity "_AdminRequestHandler\n(socketserver.StreamRequestHandler)" as REQ_HANDLER
+
+    WIN_SVC --> TCP_SERVER : создаёт и запускает
+    TCP_SERVER --> REQ_HANDLER : создаёт на каждый запрос
+}
+
+' === КОМАНДЫ СЛУЖБЫ ===
+package "Service Commands\n(внутри _execute_step)" as SVC_CMDS {
+    entity "close_openvpn\n(taskkill /F /IM openvpn.exe)" as CMD_CLOSE_VPN
+    entity "start_openvpn\n(openvpn --config)" as CMD_START_VPN
+    entity "flush_dns\n(ipconfig /flushdns)" as CMD_FLUSH_DNS
+    entity "reboot\n(shutdown /r /t N)" as CMD_REBOOT
+    entity "shutdown\n(shutdown /s /t N)" as CMD_SHUTDOWN
+
+    REQ_HANDLER --> CMD_CLOSE_VPN
+    REQ_HANDLER --> CMD_START_VPN
+    REQ_HANDLER --> CMD_FLUSH_DNS
+    REQ_HANDLER --> CMD_REBOOT
+    REQ_HANDLER --> CMD_SHUTDOWN
+}
+
+' === ОБЩИЕ КОМПОНЕНТЫ ===
+entity "config_manager\n(get_or_create_service_token)" as CONFIG_MGR
+entity "logger\n(setup_logger)" as LOGGER
+
+' ========================================
+' СВЯЗИ
+' ========================================
+
+' SABIK → Service Manager
+SABIK --> SEND_REQ : execute_service_request()
+SABIK --> ELEVATED : install_or_repair_service_elevated()
+SABIK --> ELEVATED : disable_service_elevated()
+
+' Service Manager → SCM (через sc.exe / PowerShell)
+QUERY_SVC --> SCM : sc.exe query
+START_SVC --> SCM : sc.exe start
+INSTALL_SVC --> SCM : sc.exe create / config
+DISABLE_SVC --> SCM : sc.exe config start=disabled
+ELEVATED --> SCM : PowerShell Start-Process -Verb RunAs
+
+' Service Manager → Keyring
+SEND_REQ --> CONFIG_MGR : get_or_create_service_token()
+ELEVATED --> CONFIG_MGR : get_or_create_service_token()
+CONFIG_MGR --> KEYRING : get_password() / set_password()
+
+' Service Manager → TCP → Service Process
+SEND_REQ --> TCP_SERVER : TCP (127.0.0.1:48761), JSON + token
+
+' Service Process → Keyring
+REQ_HANDLER --> CONFIG_MGR : get_or_create_service_token() (аутентификация)
+REQ_HANDLER --> LOGGER : логирование действий
+
+' SCM → Service Process
+SCM --> WIN_SVC : запуск / останов службы
+
+' UI-компонент
+USER --> SABIK : ServiceSetupWindow
+
+@enduml

@@ -1,0 +1,139 @@
+@startuml DFD_UAC
+
+title
+<color:#B6655D>SUBIK / STRUCTURE</color>
+<color:#B6655D>ZEZH / 418</color>
+end title
+
+skinparam shadowing false
+skinparam roundcorner 5
+skinparam dpi 150
+
+skinparam defaultFontName "Arial"
+skinparam defaultFontColor #242424
+skinparam defaultFontSize 12
+
+skinparam titleFontName "Arial"
+skinparam titleFontSize 22
+skinparam titleFontColor #242424
+
+skinparam linetype ortho
+skinparam nodesep 45
+skinparam ranksep 55
+
+skinparam ArrowColor #817B77
+skinparam ArrowThickness 1
+
+skinparam entity {
+    BackgroundColor #FAF9F7
+    BorderColor #C9C5C1
+    FontColor #242424
+}
+
+hide circle
+
+' === ВНЕШНИЕ СУЩНОСТИ ===
+entity "SABIK\n(AgentWorker / CommandExecutor)" as SABIK <<external>>
+entity "Пользователь\n(через MainWindow)" as USER <<external>>
+entity "Windows SCM\n(Service Control Manager)" as SCM <<external>>
+
+' === ПРОЦЕССЫ (в процессе SABIK) ===
+entity "1. ServiceSetupWindow\n(QDialog, главный поток)" as P1_SETUP
+entity "2. ServiceManager\n(windows_service_manager.py)" as P2_SM
+entity "3. Elevated Helper\n(PowerShell RunAs)" as P3_ELEVATED
+
+' === ПРОЦЕССЫ (в процессе службы) ===
+entity "4. PLACSAgentWindowsService\n(win32service, фоновый процесс)" as P4_SVC
+entity "5. AdminRequestHandler\n(TCP Stream Handler)" as P5_HANDLER
+entity "6. Command Steps\n(close_openvpn, start_openvpn,\nflush_dns, reboot, shutdown)" as P6_STEPS
+
+' === ХРАНИЛИЩА ===
+entity "Keyring\n(admin_service_token)" as D1_TOKEN <<storage>>
+entity "Лог-файлы\n(logs/agent_service_manager_*.log)" as D2_LOGS <<storage>>
+
+' === ВНЕШНИЕ СИСТЕМЫ ===
+entity "OpenVPN\n(системный процесс)" as EXT_OVPN <<external>>
+entity "Система Windows\n(shutdown, taskkill, ipconfig)" as EXT_WIN <<external>>
+
+' ========================================
+' ПОТОКИ ДАННЫХ: УСТАНОВКА СЛУЖБЫ
+' ========================================
+
+' 1. Пользователь → ServiceSetupWindow
+USER --> P1_SETUP : подтверждение настройки
+
+' 2. ServiceSetupWindow → ServiceManager (elevated установка)
+P1_SETUP --> P2_SM : install_or_repair_service_elevated()
+
+' 3. ServiceManager → Keyring (генерация токена)
+P2_SM --> D1_TOKEN : get_or_create_service_token()
+
+' 4. ServiceManager → Elevated Helper
+P2_SM --> P3_ELEVATED : run_elevated_helper(["--service-install"])
+
+' 5. Elevated Helper → SCM (установка/конфигурация службы)
+P3_ELEVATED --> SCM : sc.exe create PLACSAgentAdminService\nsc.exe config / sc.exe start
+
+' 6. SCM → PLACSAgentWindowsService (запуск процесса)
+SCM --> P4_SVC : запуск main.py --service-host
+
+' 7. SCM → ServiceManager (статус)
+SCM --> P2_SM : sc.exe query → статус
+
+' 8. ServiceManager → ServiceSetupWindow (результат)
+P2_SM --> P1_SETUP : (ok, message)
+
+' ========================================
+' ПОТОКИ ДАННЫХ: ВЫПОЛНЕНИЕ КОМАНД
+' ========================================
+
+' 9. SABIK → ServiceManager (отправка команды)
+SABIK --> P2_SM : execute_service_request({"sequence": [...]})
+SABIK --> D1_TOKEN : get_or_create_service_token()
+
+' 10. ServiceManager → PLACSAgentWindowsService (TCP)
+P2_SM --> P5_HANDLER : TCP 127.0.0.1:48761\nJSON: {token, sequence: [{kind, ...}]}
+
+' 11. AdminRequestHandler → Keyring (аутентификация)
+P5_HANDLER --> D1_TOKEN : get_or_create_service_token() → сверка токена
+
+' 12. AdminRequestHandler → Command Steps (выполнение)
+P5_HANDLER --> P6_STEPS : _execute_step(step) для каждого шага
+
+' 13. Command Steps → OpenVPN (запуск/останов)
+P6_STEPS --> EXT_OVPN : taskkill /F /IM openvpn.exe\nopenvpn --config <path>
+
+' 14. Command Steps → Система Windows
+P6_STEPS --> EXT_WIN : ipconfig /flushdns\nshutdown /r /t 15\nshutdown /s /t 15
+
+' 15. Command Steps → AdminRequestHandler (результаты)
+P6_STEPS --> P5_HANDLER : {kind, success, message}
+
+' 16. AdminRequestHandler → ServiceManager (TCP ответ)
+P5_HANDLER --> P2_SM : JSON: {ok, message, details: [...]}
+
+' 17. ServiceManager → SABIK (результат)
+P2_SM --> SABIK : (transport_ok, response_dict)
+
+' ========================================
+' ПОТОКИ ДАННЫХ: ОТКЛЮЧЕНИЕ СЛУЖБЫ
+' ========================================
+
+' 18. SABIK → ServiceManager
+SABIK --> P2_SM : disable_service_elevated()
+
+' 19. ServiceManager → Elevated Helper
+P2_SM --> P3_ELEVATED : run_elevated_helper(["--service-disable"])
+
+' 20. Elevated Helper → SCM
+P3_ELEVATED --> SCM : sc.exe stop / sc.exe config start=disabled
+
+' ========================================
+' ЛОГИРОВАНИЕ
+' ========================================
+
+P2_SM --> D2_LOGS : логирование всех операций
+P4_SVC --> D2_LOGS : servicemanager.LogInfoMsg()
+P5_HANDLER --> D2_LOGS : logging.getLogger("WindowsAdminService")
+
+@enduml

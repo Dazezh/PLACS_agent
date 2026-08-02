@@ -1,6 +1,5 @@
 import json
 import os
-import secrets
 import socket
 import subprocess
 import sys
@@ -9,6 +8,7 @@ from typing import Dict, Optional, Tuple
 
 from core.utils import is_windows
 from core.logger import setup_logger
+from core.config_manager import get_or_create_service_token
 
 # === INIT LOGGER ===
 temp_log, log_path = setup_logger(agent_name="service_manager", initial_level="DEBUG")
@@ -43,34 +43,6 @@ def get_runtime_dir() -> str:
     path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     temp_log.debug(f"[SM003] обычный режим, путь: {path}")
     return path
-
-
-def get_service_token_path() -> str:
-    path = os.path.join(get_runtime_dir(), ".admin_service_token")
-    temp_log.debug(f"[SM004] Путь к токену: {path}")
-    return path
-
-
-def get_or_create_service_token() -> str:
-    token_path = get_service_token_path()
-    temp_log.info("[SM010] Получение или создание токена службы")
-
-    if os.path.exists(token_path):
-        temp_log.debug("[SM011] Токен файл существует")
-        with open(token_path, "r", encoding="utf-8") as token_file:
-            token = token_file.read().strip()
-            if token:
-                temp_log.debug("[SM012] Токен успешно прочитан")
-                return token
-
-    temp_log.warning("[SM013] Токен отсутствует, создаём новый")
-    token = secrets.token_hex(32)
-
-    with open(token_path, "w", encoding="utf-8") as token_file:
-        token_file.write(token)
-
-    temp_log.info("[SM014] Новый токен создан")
-    return token
 
 
 def get_service_host_command() -> str:

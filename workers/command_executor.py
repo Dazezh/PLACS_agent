@@ -4,7 +4,7 @@ import os
 import platform
 import subprocess
 
-from PyQt5.QtCore import QSettings
+from PyQt6.QtCore import QSettings
 
 from core.privilege_prompt import ApprovalRequest, approval_broker
 from core.utils import get_openvpn_config_path, is_linux

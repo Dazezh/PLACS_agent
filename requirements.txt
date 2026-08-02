@@ -1,13 +1,12 @@
-PyQt5
+PyQt6
 requests
-pythonping
 pytz
 tzlocal
 python-slugify
 mss
 Pillow
-keyboard
-playsound
 psutil
 wmi
 pywin32
+keyring
+pyinstaller

@@ -1,5 +1,5 @@
 # workers/agent_worker.py
-from PyQt5.QtCore import QObject, pyqtSignal, QTimer,QSettings
+from PyQt6.QtCore import QObject, pyqtSignal, QTimer,QSettings
 import logging
 import sys
 import os

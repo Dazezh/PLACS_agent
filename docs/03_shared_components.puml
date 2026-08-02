@@ -1,0 +1,81 @@
+@startuml Shared_Components_Diagram
+
+title
+<color:#B6655D>SUBIK / STRUCTURE</color>
+<color:#B6655D>ZEZH / 418</color>
+end title
+
+skinparam shadowing false
+skinparam roundcorner 5
+skinparam dpi 150
+
+skinparam defaultFontName "Arial"
+skinparam defaultFontColor #242424
+skinparam defaultFontSize 12
+
+skinparam titleFontName "Arial"
+skinparam titleFontSize 22
+skinparam titleFontColor #242424
+
+
+skinparam nodesep 45
+skinparam ranksep 55
+
+skinparam ArrowColor #817B77
+skinparam ArrowThickness 1
+
+skinparam entity {
+    BackgroundColor #FAF9F7
+    BorderColor #C9C5C1
+    FontColor #242424
+}
+
+hide circle
+
+' === ОБЩИЕ КОМПОНЕНТЫ ===
+package "Shared Core" as SHARED {
+    entity "config_manager\n(Keyring CRUD, get_server_url,\nget_agent_token, get_or_create_service_token)" as CONFIG_MGR
+    entity "error_types\n(ErrorType, ErrorState)" as ERR_TYPES
+    entity "logger\n(setup_logger, set_global_log_level,\n_clean_old_logs)" as LOGGER_MOD
+    entity "utils\n(is_windows, is_linux, get_username,\nget_system_specs, get_system_metrics,\nsanitize_filename, clear_folder, ...)" as UTILS
+    entity "ver\n(__version__, __assets_packet_version__,\n__author__)" as VER
+    entity "constant\n(PLACS_SERVER_URL, POOLING_INTERVAL,\nAUTH_TOKEN)" as CONSTANT
+    entity "single_instance\n(SingleInstanceLock)" as SINGLE_LOCK
+}
+
+' === ПОТРЕБИТЕЛИ ===
+entity "SABIK\n(main.py, AgentWorker, SystemMonitor,\nMainWindow, ServerCommunicator)\n— основное приложение" as SABIK <<consumer>>
+entity "Admin UAC Module\n(windows_admin_service.py,\nwindows_service_manager.py)\n— административный модуль" as UAC <<consumer>>
+entity "Updater\n(update.py, UpdaterWindow)\n— автономная утилита обновления" as UPDATER <<consumer>>
+
+' ========================================
+' СВЯЗИ
+' ========================================
+
+SABIK --> CONFIG_MGR : get_server_url(), get_agent_token(),\nget_polling_interval(), get_debug_state()
+SABIK --> ERR_TYPES : ErrorType, ErrorState
+SABIK --> LOGGER_MOD : setup_logger(), set_global_log_level()
+SABIK --> UTILS : все utility-функции
+SABIK --> VER : __version__, __assets_packet_version__
+SABIK --> CONSTANT : PLACS_SERVER_URL
+SABIK --> SINGLE_LOCK : SingleInstanceLock("PLACSAgent")
+
+UAC --> CONFIG_MGR : get_or_create_service_token()
+UAC --> ERR_TYPES : (нет прямой зависимости)
+UAC --> LOGGER_MOD : setup_logger(agent_name="service_manager")
+UAC --> UTILS : is_windows()
+UAC --> VER : (нет прямой зависимости)
+UAC --> CONSTANT : (нет прямой зависимости)
+UAC --> SINGLE_LOCK : (нет)
+
+UPDATER --> CONFIG_MGR : get_server_url(), get_agent_token(),\nget_polling_interval(), load_config(), set_config()
+UPDATER --> UTILS : get_os_string()
+UPDATER --> VER : (нет прямой зависимости)
+UPDATER --> CONSTANT : (нет прямой зависимости)
+
+' Внутренние зависимости
+CONFIG_MGR --> CONSTANT : импортирует PLACS_SERVER_URL, POOLING_INTERVAL, AUTH_TOKEN
+UTILS --> VER : (нет прямой зависимости)
+LOGGER_MOD --> VER : (нет)
+
+@enduml

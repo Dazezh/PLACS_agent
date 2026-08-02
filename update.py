@@ -27,9 +27,9 @@ import subprocess
 import platform
 from urllib.parse import urljoin, urlparse
 
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QPushButton, QApplication, QProgressBar, QWidget, QLineEdit, QSpinBox, QMessageBox, QFrame
-from PyQt5.QtGui import QIcon, QPixmap, QTextOption
-from PyQt5.QtCore import Qt, QCoreApplication
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QPushButton, QApplication, QProgressBar, QWidget, QLineEdit, QSpinBox, QMessageBox, QFrame
+from PyQt6.QtGui import QIcon, QPixmap, QTextOption
+from PyQt6.QtCore import Qt, QTimer, QCoreApplication
 
 from core.config_manager import get_server_url, set_config, load_config, get_polling_interval, get_agent_token
 
@@ -163,11 +163,11 @@ class UpdaterWindow(QDialog):
 
         self.status_label = QLabel("Инициализация...")
         self.status_label.setObjectName("StatusLabel")
-        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.image_label = QLabel()
         self.image_label.setObjectName("ImageLabel")
-        self.image_label.setAlignment(Qt.AlignCenter)
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setMinimumSize(360, 202) # Соотношение 16:9
 
         self.progress_bar = QProgressBar()
@@ -279,7 +279,7 @@ class UpdaterWindow(QDialog):
             pixmap = QPixmap(image_path)
             # Масштабируем до ширины контейнера, сохраняя пропорции
             scaled_pixmap = pixmap.scaled(self.image_label.width(), self.image_label.height(),
-                                          Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                                          Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             self.image_label.setPixmap(scaled_pixmap)
         else:
             self.image_label.setText(f"Изображение\n{os.path.basename(image_path)}\nне найдено")
@@ -304,7 +304,24 @@ class UpdaterWindow(QDialog):
         self.set_status(status_text, image)
         self.update_progress(100)
         self.close_button.setEnabled(True)
-        self.close_button.setText("Завершить")
+
+        # 10-секундный автоотсчёт до закрытия
+        self._close_countdown = 10
+        self._update_countdown_button()
+        self._countdown_timer = QTimer(self)
+        self._countdown_timer.timeout.connect(self._tick_countdown)
+        self._countdown_timer.start(1000)
+
+    def _update_countdown_button(self):
+        self.close_button.setText(f"Завершить ({self._close_countdown})")
+
+    def _tick_countdown(self):
+        self._close_countdown -= 1
+        if self._close_countdown > 0:
+            self._update_countdown_button()
+        else:
+            self._countdown_timer.stop()
+            self.accept()
 
 class ConfigDialog(QDialog):
     def __init__(self, parent=None):
@@ -326,10 +343,10 @@ class ConfigDialog(QDialog):
         try:
             pixmap = QPixmap(icon_path)
             if not pixmap.isNull():
-                scaled_pixmap = pixmap.scaled(150, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                scaled_pixmap = pixmap.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
                 icon_label = QLabel()
                 icon_label.setPixmap(scaled_pixmap)
-                icon_label.setAlignment(Qt.AlignCenter)
+                icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 layout.addWidget(icon_label)
             else:
                 print(f"Ошибка: Не удалось загрузить изображение '{icon_path}'. Проверьте путь и формат.")
@@ -337,7 +354,7 @@ class ConfigDialog(QDialog):
             print(f"Исключение при загрузке иконки в ConfigDialog: {e}")
 
         title_label = QLabel("<h3>«Привязка» к серверу PLACS</h3>")
-        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
 
         layout.addSpacing(20)
@@ -496,19 +513,19 @@ class ChoiceDialog(QDialog):
 
         greeting_label = QLabel(f"Здравствуйте, {get_username()}!")
         greeting_label.setObjectName("GreetingLabel")
-        greeting_label.setAlignment(Qt.AlignCenter)
+        greeting_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         greeting_label.setWordWrap(True)
 
         image_label = QLabel()
         image_label.setObjectName("ImageLabel")
-        image_label.setAlignment(Qt.AlignCenter)
+        image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         image_label.setMinimumSize(360, 202)
         
         image_path = resource_path("ui/update/img/manager.png")
         if os.path.exists(image_path):
             pixmap = QPixmap(image_path)
             scaled_pixmap = pixmap.scaled(350, 350, 
-                                          Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                                          Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             image_label.setPixmap(scaled_pixmap)
         else:
             image_label.setText(f"Изображение\n{os.path.basename(image_path)}\nне найдено")
@@ -559,8 +576,8 @@ class ChoiceDialog(QDialog):
 
         # Горизонтальный разделитель
         line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setFrameShadow(QFrame.Sunken)
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setFrameShadow(QFrame.Shadow.Sunken)
         right_pane_layout.addWidget(line)
 
         # Нижний ряд кнопок
@@ -630,7 +647,7 @@ class ChoiceDialog(QDialog):
 
     def update_config(self):
         config_dialog = ConfigDialog(self) 
-        if config_dialog.exec_() == QDialog.Accepted:
+        if config_dialog.exec() == QDialog.DialogCode.Accepted:
             self.update_info()
 
     def on_reinstall(self):
@@ -839,7 +856,7 @@ def launch_main_app():
             # Можно показать диалоговое окно об ошибке
             return
 
-        subprocess.Popen([main_app_path, 'skip_update'])
+        subprocess.Popen([main_app_path], shell=False)
     except Exception as e:
         print(f"Не удалось запустить основное приложение: {e}")
 
@@ -860,7 +877,7 @@ def main():
     # Режим: Запуск без аргументов
     if len(sys.argv) == 1:
         dialog = ChoiceDialog()
-        if dialog.exec_() == QDialog.Accepted:
+        if dialog.exec() == QDialog.DialogCode.Accepted:
             if dialog.choice == 'reinstall':
                 args.reinstall = True
             elif dialog.choice == 'launch':
@@ -887,7 +904,7 @@ def main():
     if not server_url:
         updater_window.log_message("<b><font color='#FF6347'>Критическая ошибка: URL сервера не настроен.</font></b>", is_html=True)
         updater_window.finalize(success=False)
-        updater_window.exec_()
+        updater_window.exec()
         launch_main_app() # Попытка запустить основное приложение для настройки
         sys.exit(1)
 
@@ -915,14 +932,14 @@ def main():
             updater_window.log_message("<br>--- ИТОГИ ---<br>", is_html=True)
             updater_window.log_message(summary_notes, is_html=True)
             updater_window.log_message(
-                "<hr><h3>После закрытия данного окна будет запущен экземпляр агента.</h3>", 
+                "<hr><h3>После закрытия данного окна будет запущен экземпляр агента. Окно автоматически закроется через 10 секунд.</h3>", 
                 is_html=True
                 )
         
         updater_window.finalize(success=not has_errors)
         if not updater_window.isVisible():
             updater_window.show()
-        app.exec_()
+        app.exec()
     elif args.hide_process:
         # Если обновлений не было в скрытом режиме, просто выходим
         launch_main_app()
@@ -932,7 +949,7 @@ def main():
     if not all_notes and not args.hide_process:
         updater_window.log_message("\nОбновлений не найдено.")
         updater_window.finalize(success=True)
-        app.exec_()
+        app.exec()
 
     launch_main_app()
     sys.exit(0)

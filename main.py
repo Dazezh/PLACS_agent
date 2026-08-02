@@ -1,10 +1,10 @@
 import sys
 import os
 
-# PyQt5 UI библиотеки
-from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
-from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import QThread, QSettings, QTimer
+# PyQt6 UI библиотеки
+from PyQt6.QtWidgets import QApplication, QDialog, QMessageBox
+from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import QThread, QSettings, QTimer
 
 # Мои модули из разных папок
 from core.logger import setup_logger
@@ -14,8 +14,6 @@ from ui.main_window import MainWindow
 from ui.tray_icon import SystemTrayApp
 
 from workers.agent_worker import AgentWorker, SystemMonitor
-from workers.network_diagnoser import NetworkDiagnoser
-from workers.hotkey_listener import GlobalHotkeyListener
 
 from core.error_state_manager import ErrorStateManager
 from core.single_instance import SingleInstanceLock
@@ -30,10 +28,13 @@ from core.windows_service_manager import (
     start_service,
 )
 
-from core.utils import is_windows, clear_folder
+from core.utils import is_windows, clear_folder, apply_update_script_update
 from core.ver import __assets_packet_version__, __version__
 
 from urllib.parse import urlparse
+
+# Устанавливаем рабочую директорию на ту, где находится main.py
+os.chdir(os.path.dirname(os.path.abspath(sys.argv[0])))
 
 # Глобальные переменные для логгера и UI элементов
 log = None 
@@ -44,7 +45,6 @@ agent_worker = None # Переменная для рабочего объект�
 error_state_manager = None
 debug_pult_dialog = None
 debug_pult_thread = None
-hotkey_listener = None
 system_monitor_thread = None
 system_monitor = None
 
@@ -125,7 +125,6 @@ def _shutdown_core(final_action, app, main_window, power_off_title="Отключ
     log.debug("Останавливаю фоновые процессы и потоки...")
     agent_worker.stop_polling()
     agent_thread.quit()
-    network_diagnoser_thread.quit()
     if system_monitor:
         try:
             system_monitor.stop()
@@ -133,9 +132,6 @@ def _shutdown_core(final_action, app, main_window, power_off_title="Отключ
             pass
     if system_monitor_thread:
         system_monitor_thread.quit()
-    
-    if hotkey_listener:
-        hotkey_listener.stop()
     
     base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
     tmp_dir = os.path.join(base_dir, '.tmp')
@@ -167,7 +163,7 @@ def ensure_windows_admin_service_ready(app, window):
         return True
 
     dialog_result, accepted_setup = window.show_service_setup_window(retry_mode=configured_before)
-    if dialog_result != QDialog.Accepted or not accepted_setup:
+    if dialog_result != QDialog.DialogCode.Accepted or not accepted_setup:
         app.quit()
         return False
 
@@ -188,7 +184,6 @@ def ensure_windows_admin_service_ready(app, window):
 def initialize_agent_ui_and_config():
     """Инициализирует QApplication, загружает конфиг и настраивает UI."""
     global log, main_window, tray_icon, agent_thread, agent_worker, error_state_manager
-    global network_diagnoser_thread, network_diagnoser, hotkey_listener
     global system_monitor_thread, system_monitor
 
     app = QApplication(sys.argv)
@@ -225,7 +220,7 @@ def initialize_agent_ui_and_config():
         temp_log.warning("Конфигурация агента отсутствует или неполна. Запускаю UI для настройки.")
         
         dialog = ConfigDialog()
-        if dialog.exec_() == QDialog.Accepted:
+        if dialog.exec() == QDialog.DialogCode.Accepted:
             server_url = dialog.server_url
             auth_token = dialog.auth_token
             polling_interval = dialog.polling_interval
@@ -242,6 +237,9 @@ def initialize_agent_ui_and_config():
     log, log_path = setup_logger(agent_name=agent_id_from_token, initial_level=logging_level, max_log_folder_size_mb=max_log_folder_size_mb)
     log.info("UI и конфигурация агента инициализированы.")
 
+    # Проверяем, нужно ли применять обновление скрипта
+    apply_update_script_update()
+
     error_state_manager = ErrorStateManager()
 
     main_window = MainWindow(DEBUG_MODE, log_path)
@@ -256,11 +254,6 @@ def initialize_agent_ui_and_config():
     # Перемещаем рабочий объект в поток
     agent_worker.moveToThread(agent_thread)
 
-    # --- Создание и инициализация NetworkDiagnoser ---
-    network_diagnoser_thread = QThread()
-    network_diagnoser = NetworkDiagnoser()
-    network_diagnoser.moveToThread(network_diagnoser_thread)
-
     # --- Создание и инициализация SystemMonitor ---
     system_monitor_thread = QThread()
     system_monitor = SystemMonitor()
@@ -274,26 +267,10 @@ def initialize_agent_ui_and_config():
 
     error_state_manager.ui_state_changed.connect(main_window.update_ui_for_error_state)
     error_state_manager.last_error_message_changed.connect(main_window.update_last_error_display)
-    error_state_manager.trigger_diagnostic.connect(main_window.run_network_diagnostic)
 
     # Сигналы SystemMonitor в UI
     system_monitor.status_update.connect(main_window.update_status)
     system_monitor.error_occurred.connect(error_state_manager.handle_error)
-
-    # ОТ MainWindow (кнопка "Перезапустить диагностику") К NetworkDiagnoser
-    main_window.start_diagnostic_signal.connect(network_diagnoser.run_diagnostic)
-    
-    # ОТ MainWindow (кнопка "Попробовать исправить") К NetworkDiagnoser
-    main_window.try_fix_network_signal.connect(network_diagnoser.try_to_fix_network)
-
-    # ОТ NetworkDiagnoser К MainWindow для обновления UI диагностики
-    network_diagnoser.check_status_update.connect(main_window.update_diagnostic_checklist)
-    network_diagnoser.detail_output_update.connect(main_window.append_diagnostic_details)
-    network_diagnoser.diagnostic_finished.connect(main_window.handle_diagnostic_finish)
-
-    # ОТ NetworkDiagnoser К AgentWorker для управления циклом опроса
-    network_diagnoser.request_polling_stop.connect(agent_worker.stop_polling)
-    network_diagnoser.request_polling_start.connect(agent_worker.start_polling)
 
     # --- VPN сигналы ---
     main_window.request_vpn_refresh.connect(agent_worker.refresh_vpn_configs)
@@ -337,11 +314,6 @@ def initialize_agent_ui_and_config():
     app.aboutToQuit.connect(handle_app_quit_sequence)
     tray_icon.exit_action.triggered.connect(handle_app_quit_sequence) 
 
-    # Слушатель сочетаний клавиш запускаются только если пользователь хочет
-    if settings.value("shortcuts/Enabled", True, type=bool) and is_windows():
-        hotkey_listener = GlobalHotkeyListener()
-        hotkey_listener.start()
-
     # --- DEBUG PULT ---
     if DEBUG_MODE:
         try:
@@ -353,7 +325,6 @@ def initialize_agent_ui_and_config():
             debug_pult_dialog.request_state_change.connect(main_window.update_ui_for_error_state)
             debug_pult_dialog.request_exit.connect(lambda: handle_app_quit_sequence(fast=True))
             debug_pult_dialog.request_layout_by_id.connect(main_window.switch_layout)
-            debug_pult_dialog.request_show_diagnostic.connect(main_window.switch_to_diagnostic_layout_and_start)
             debug_pult_dialog.request_status_text.connect(main_window.update_status)
             debug_pult_dialog.request_display_message.connect(main_window.handle_display_message)
 
@@ -374,13 +345,23 @@ if __name__ == "__main__":
     import argparse
     import subprocess
 
-    if "--service-install" in sys.argv:
+    parser = argparse.ArgumentParser(description='PLACS Агент - ПО для удалённого доступа и отслежвания состяния устройства клиента.')
+    parser.add_argument('--service-install', action='store_true',
+                        help='Запустить установку Windows-службы для привилегированных действий.')
+    parser.add_argument('--service-disable', action='store_true',
+                        help='Отключить Windows-службу для привилегированных действий.')
+    parser.add_argument('--service-host', action='store_true',
+                        help='Запустить Windows-службу для привилегированных действий.')
+
+    args = parser.parse_args()
+
+    if args.service_install:
         sys.exit(install_service_cli())
 
-    if "--service-disable" in sys.argv:
+    if args.service_disable:
         sys.exit(disable_service_cli())
 
-    if "--service-host" in sys.argv:
+    if args.service_host:
         import servicemanager
         from workers.windows_admin_service import PLACSAgentWindowsService
 
@@ -388,13 +369,7 @@ if __name__ == "__main__":
         servicemanager.PrepareToHostSingle(PLACSAgentWindowsService)
         servicemanager.StartServiceCtrlDispatcher()
         sys.exit(0)
-
-    parser = argparse.ArgumentParser(description='PLACS Агент - ПО для удалённого доступа и отслежвания состяния устройства клиента.')
-    parser.add_argument('skip_update', type=str, nargs='?', default='.',
-                        help='Пропустить проверку обновлений. Если аргумент отсутствует, будет запущено обновление.')
-
-    args = parser.parse_args()
-
+    
     instance_lock = SingleInstanceLock("PLACSAgent")
     lock_acquired, running_pid = instance_lock.acquire()
     if not lock_acquired:
@@ -406,11 +381,7 @@ if __name__ == "__main__":
         )
         sys.exit(0)
 
-    if args.skip_update == '.' and get_server_url() and not DEBUG_MODE:
-        start_update()
-
-    # Если мы дошли до сюда, значит, либо был аргумент skip_update,
-    # либо произошла ошибка при запуске обновления, и мы решили продолжить.
+    # раньше мы проверяли обновления, но теперь это делает сервер
     app = initialize_agent_ui_and_config()
 
     if not app:
@@ -420,7 +391,6 @@ if __name__ == "__main__":
     # Запускаем потоки, если они определены
     if agent_thread and agent_worker:
         agent_thread.start() # Запуск потока обработчика
-        network_diagnoser_thread.start() # Запуск потока диагностики.
         system_monitor_thread.start() # Запуск потока мониторинга.
 
-    sys.exit(app.exec_())
+    sys.exit(app.exec())

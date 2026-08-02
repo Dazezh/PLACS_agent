@@ -1,7 +1,7 @@
 import sys
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButton
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QPushButton
+from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import Qt, QTimer
 
 class SetOnDisplayWindow(QWidget):
     def __init__(self, message, duration):
@@ -12,7 +12,7 @@ class SetOnDisplayWindow(QWidget):
         self.disable_button_for_seconds(duration) # Блокируем кнопку при старте
 
     def initUI(self, message):
-        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
 
         # Главный вертикальный лейаут, который будет держать всё
         main_vertical_layout = QVBoxLayout(self)
@@ -24,9 +24,9 @@ class SetOnDisplayWindow(QWidget):
         pic_h_layout.addStretch() # Отступ слева
 
         ahtung_pic = QPixmap("ui/media/img/icons_png/PLACS_ICON_AHTUNG.png")
-        scaled_pixmap = ahtung_pic.scaled(260, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        scaled_pixmap = ahtung_pic.scaled(260, 260, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         icon_label = QLabel()
-        icon_label.setAlignment(Qt.AlignCenter)
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon_label.setMinimumHeight(260)
         icon_label.setMinimumWidth(260)
         icon_label.setPixmap(scaled_pixmap)
@@ -37,15 +37,15 @@ class SetOnDisplayWindow(QWidget):
 
         # Контейнер для заголовка и текста
         content_layout = QVBoxLayout()
-        content_layout.setAlignment(Qt.AlignCenter)
+        content_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         name_label = QLabel("Сообщение от PLACS:")
-        name_label.setAlignment(Qt.AlignCenter)
+        name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         name_label.setStyleSheet("font-size: 40px;")
         content_layout.addWidget(name_label)
 
         self.self_label = QLabel(message)
-        self.self_label.setAlignment(Qt.AlignCenter)
+        self.self_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.self_label.setStyleSheet("font-size: 20px;")
         self.self_label.setWordWrap(True) # Включаем перенос слов
         content_layout.addWidget(self.self_label)

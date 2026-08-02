@@ -1,0 +1,148 @@
+@startuml DFD_SABIK
+
+title
+<color:#B6655D>SUBIK / STRUCTURE</color>
+<color:#B6655D>ZEZH / 418</color>
+end title
+
+skinparam shadowing false
+skinparam roundcorner 5
+skinparam dpi 150
+
+skinparam defaultFontName "Arial"
+skinparam defaultFontColor #242424
+skinparam defaultFontSize 12
+
+skinparam titleFontName "Arial"
+skinparam titleFontSize 22
+skinparam titleFontColor #242424
+
+skinparam linetype ortho
+skinparam nodesep 45
+skinparam ranksep 55
+
+skinparam ArrowColor #817B77
+skinparam ArrowThickness 1
+
+skinparam entity {
+    BackgroundColor #FAF9F7
+    BorderColor #C9C5C1
+    FontColor #242424
+}
+
+hide circle
+
+' === DFD НОТАЦИЯ ===
+' Процессы — со скруглёнными углами (entity)
+' Хранилища — прямоугольник
+' Внешние сущности — с тенью
+
+' === ПОЛЬЗОВАТЕЛЬ (внешняя сущность) ===
+entity "Пользователь" as USER <<external>>
+
+' === ПРОЦЕССЫ ===
+entity "1. MainWindow\n(GUI, главный поток)" as P1_UI
+entity "2. AgentWorker\n(поток agent_thread)" as P2_POLL
+entity "3. SystemMonitor\n(поток system_monitor_thread)" as P3_MON
+entity "4. ErrorStateManager\n(главный поток)" as P4_ERR
+entity "5. ServerCommunicator\n(HTTP клиент)" as P5_NET
+entity "6. CommandExecutor\n(исполнение команд)" as P6_EXEC
+entity "7. ApprovalBroker\n(подтверждение привилегий)" as P7_APPROVAL
+entity "8. ConfigManager\n(Keyring)" as P8_CFG
+
+' === ХРАНИЛИЩА ===
+entity "QSettings\n(PLACS/Agent)" as DS_SETTINGS <<storage>>
+entity "Лог-файлы\n(logs/agent_*.log)" as DS_LOGS <<storage>>
+entity ".tmp/\n(OpenVPN .conf)" as DS_TMP <<storage>>
+entity "Keyring\n(Windows Credential Manager)" as DS_KEYRING <<storage>>
+
+' === ВНЕШНИЕ СИСТЕМЫ ===
+entity "PLACS Server\n(REST API)" as EXT_SERVER <<external>>
+entity "OpenVPN\n(системный процесс)" as EXT_OVPN <<external>>
+entity "Система\n(bash/reboot/shutdown)" as EXT_SYSTEM <<external>>
+
+' ========================================
+' ПОТОКИ ДАННЫХ
+' ========================================
+
+' 1. Пользователь → MainWindow
+USER --> P1_UI : действия (клики, настройки)
+
+' 2. MainWindow → AgentWorker (сигналы Qt)
+P1_UI --> P2_POLL : request_vpn_refresh\nrequest_vpn_connect(name)\nrequest_vpn_disconnect
+
+' 3. AgentWorker → ServerCommunicator (вызовы функций)
+P2_POLL --> P5_NET : get_commands() → список команд\nget_me() → VPN конфиги\nreport_command_output(id, output, status)\nsend_log_to_server(type, msg)
+
+' 4. ServerCommunicator → PLACS Server (HTTP)
+P5_NET --> EXT_SERVER : GET /api/get_command\nGET /api/get_me\nPOST /api/report_output\nPOST /api/send_log
+
+' 5. PLACS Server → ServerCommunicator (HTTP Response)
+EXT_SERVER --> P5_NET : JSON: команды, конфиги, статус
+
+' 6. ServerCommunicator → AgentWorker (возврат значений)
+P5_NET --> P2_POLL : (commands, error_info)\n(user_info, error_info)
+
+' 7. AgentWorker → CommandExecutor (вызов функции)
+P2_POLL --> P6_EXEC : execute_command(command_data)\n{type: bash|network|custom|set_on_display}
+
+' 8. CommandExecutor → .tmp/ (чтение конфигов)
+P6_EXEC --> DS_TMP : get_openvpn_config_path(name) → .conf
+
+' 9. CommandExecutor → OpenVPN (запуск процесса)
+P6_EXEC --> EXT_OVPN : openvpn --config <path>
+
+' 10. CommandExecutor → Система (bash/shutdown/reboot)
+P6_EXEC --> EXT_SYSTEM : sudo shutdown / sc.exe
+
+' 11. CommandExecutor → ApprovalBroker (подтверждение)
+P6_EXEC --> P7_APPROVAL : submit_and_wait(ApprovalRequest)
+
+' 12. ApprovalBroker → MainWindow (диалог подтверждения)
+P7_APPROVAL --> P1_UI : process_pending_privileged_requests()
+
+' 13. AgentWorker → MainWindow (сигналы статуса)
+P2_POLL --> P1_UI : status_update(str)\nshow_display_message_signal(str)\nvpn_configs_updated(list)\nvpn_operation_status(str,str)
+
+' 14. AgentWorker → ErrorStateManager (сигналы ошибок)
+P2_POLL --> P4_ERR : error_occurred(ErrorType, msg)
+
+' 15. SystemMonitor → ServerCommunicator (метрики)
+P3_MON --> P5_NET : report_specs(specs_data)\nreport_metrics(metrics_data)
+
+' 16. SystemMonitor → MainWindow (статус)
+P3_MON --> P1_UI : status_update(str)
+
+' 17. SystemMonitor → ErrorStateManager (ошибки)
+P3_MON --> P4_ERR : error_occurred(ErrorType, msg)
+
+' 18. ErrorStateManager → MainWindow (состояние UI)
+P4_ERR --> P1_UI : ui_state_changed(ErrorState)\nlast_error_message_changed(str)
+
+' 19. ConfigManager → Keyring (чтение/запись)
+P8_CFG --> DS_KEYRING : get_password() / set_password()
+
+' 20. AgentWorker → ConfigManager (чтение)
+P2_POLL --> P8_CFG : get_polling_interval()\nget_debug_state()
+
+' 21. MainWindow → ConfigManager
+P1_UI --> P8_CFG : set_config() / save_config()
+
+' 22. All → Лог-файлы (запись логов)
+P2_POLL --> DS_LOGS : logging.info/error/...
+P3_MON --> DS_LOGS : logging.info/error/...
+P4_ERR --> DS_LOGS : logging.warning/...
+P5_NET --> DS_LOGS : logging.info/error/...
+
+' 23. MainWindow → QSettings
+P1_UI --> DS_SETTINGS : чтение/запись настроек UI
+P2_POLL --> DS_SETTINGS : чтение notifications/*
+P3_MON --> DS_SETTINGS : чтение monitoring/enabled
+
+' 24. AgentWorker → .tmp/ (запись конфигов)
+P2_POLL --> DS_TMP : запись .ovpn конфигов из get_me()
+
+' 25. CommandExecutor → ServerCommunicator (отправка логов)
+P6_EXEC --> P5_NET : send_log_to_server() при ошибках
+
+@enduml

@@ -1,13 +1,14 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction, QMessageBox, QLabel
-from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import QCoreApplication
+from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QMessageBox, QLabel
+from PyQt6.QtGui import QIcon, QAction
+from PyQt6.QtCore import QCoreApplication
 from core.ver import __version__, __author__
 
 class SystemTrayApp(QSystemTrayIcon):
     def __init__(self, icon_path, parent=None, main_window_instance=None):
         super().__init__(QIcon(icon_path), parent)
         self.main_window_instance = main_window_instance
+        self._showing_about = False
         self.activated.connect(self.on_tray_icon_activated)
 
         menu = QMenu()
@@ -20,6 +21,11 @@ class SystemTrayApp(QSystemTrayIcon):
         self.show_action = QAction("Показать основное окно", self)
         self.show_action.triggered.connect(self.show_main_window)
         menu.addAction(self.show_action)
+
+        self.hide_action = QAction("Скрыть основное окно", self)
+        self.hide_action.triggered.connect(self.hide_main_window)
+        menu.addAction(self.hide_action)
+
         self.show_about_button = QAction("О программе", self)
         self.show_about_button.triggered.connect(self.show_about)
         menu.addAction(self.show_about_button)
@@ -33,16 +39,29 @@ class SystemTrayApp(QSystemTrayIcon):
         self.show()
 
     def on_tray_icon_activated(self, reason):
-        if reason == QSystemTrayIcon.Trigger: # Левый клик
+        if reason == QSystemTrayIcon.ActivationReason.Trigger: # Левый клик
             self.show_main_window()
 
     def show_main_window(self):
+        if self._showing_about:
+            return
         if self.main_window_instance:
             self.main_window_instance.show()
             self.main_window_instance.activateWindow()
             self.main_window_instance.raise_()
 
+    def hide_main_window(self):
+        if self.main_window_instance:
+            self.main_window_instance.hide()
+
     def show_about(self):
+        # Запоминаем, было ли главное окно открыто
+        was_visible = self.main_window_instance and self.main_window_instance.isVisible()
+        if was_visible:
+            self.hide_main_window()
+
+        self._showing_about = True
+
         QMessageBox.about(None, "О программе PLACS.Agent", 
             f"<b>Версия агентского ПО:</b> {__version__}<br><br>"
             f"<b>Автор:</b> {__author__}<br><br>"
@@ -57,15 +76,13 @@ class SystemTrayApp(QSystemTrayIcon):
                 "<li>Вывод уведомлений о статусе;</li>"
                 "<li>Удалённое выполнение любых bash команд.</li>"
             "</ul>"
-            "<b>Сочетания клавиш:</b>"
-            "<dl>"
-                "<dt>Сaps Lock + `</dt>"
-                    "<dd>Создать скриншот экрана</dd>"
-                "<dt>Сaps Lock + R</dt>"
-                    "<dd>Принудительно перезапустить агента</dd>"
-            "</dl>"
             "<center>🚀 Наслаждайтесь работой с PLACS!</center>")
+        self._showing_about = False
 
-    def show_message(self, title, message, icon=QSystemTrayIcon.Information):
+        # Восстанавливаем главное окно, если оно было открыто
+        if was_visible:
+            self.show_main_window()
+
+    def show_message(self, title, message, icon=QSystemTrayIcon.MessageIcon.Information):
         """Показывает всплывающее уведомление из трея."""
         self.showMessage(title, message, icon)

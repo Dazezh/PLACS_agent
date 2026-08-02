@@ -159,7 +159,44 @@ def get_os_string():
     elif sys.platform.startswith('win'): return 'windows'
     elif sys.platform.startswith('darwin'): return 'macos'
     else: return 'unknown'
-    
+
+
+def apply_update_script_update():
+    """Проверяет наличие обновления скрипта обновления в папке update_update_script/
+    и, если оно есть, заменяет текущий исполняемый файл новым, после чего удаляет папку.
+
+    Returns:
+        bool: True, если обновление было применено, иначе False.
+    """
+    UPDATE_DIR = "update_update_script"
+    SCRIPT_NAME = "update_placs.exe" if is_windows() else "update_placs"
+
+    new_script_path = os.path.join(UPDATE_DIR, SCRIPT_NAME)
+    root_script_path = os.path.join(os.getcwd(), SCRIPT_NAME)
+
+    if not os.path.isfile(new_script_path):
+        log.debug(f"Обновление скрипта обновления не найдено: {new_script_path}")
+        return False
+
+    log.info(f"Найдено обновление скрипта обновления: {new_script_path}")
+    try:
+        # Удаляем старый файл в корне, если он есть
+        if os.path.exists(root_script_path):
+            os.remove(root_script_path)
+            log.info(f"Удалён старый скрипт обновления: {root_script_path}")
+
+        # Копируем новый
+        shutil.copy2(new_script_path, root_script_path)
+        log.info(f"Новый скрипт обновления скопирован в: {root_script_path}")
+
+        # Удаляем папку с обновлением
+        shutil.rmtree(UPDATE_DIR)
+        log.info(f"Папка обновления удалена: {UPDATE_DIR}")
+        return True
+    except OSError as e:
+        log.error(f"Ошибка при применении обновления скрипта обновления: {e}")
+        return False
+
 
 def get_system_specs():
     """Собирает технические характеристики устройства.

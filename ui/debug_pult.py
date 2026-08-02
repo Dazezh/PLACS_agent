@@ -1,6 +1,6 @@
 import sys
-from PyQt5.QtCore import Qt, pyqtSignal, QObject, QThread
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QLineEdit, QSpinBox, QGroupBox
+from PyQt6.QtCore import Qt, pyqtSignal, QObject, QThread
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QLineEdit, QSpinBox, QGroupBox
 
 from core.error_types import ErrorState
 
@@ -22,7 +22,7 @@ class DebugPultDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("PLACS Debug Пульт — ТЫ ЗДЕСЬ ГЛАВНЫЙ (временно)")
-        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
         self.setFixedSize(590, 630)
         self._build_ui()
 

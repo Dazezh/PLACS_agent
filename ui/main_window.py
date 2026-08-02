@@ -1,16 +1,16 @@
 import os
 import re
 
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QSizePolicy, QScrollArea,
     QLabel, QTextEdit, QToolBar, QPushButton, 
     QDialog, QHBoxLayout, QStackedWidget, QGridLayout,
     QApplication, QMessageBox, QListWidget,
-    QListWidgetItem, QShortcut
+    QListWidgetItem
 )
 
-from PyQt5.QtCore import Qt, QSettings, pyqtSignal, QSize, QTimer
-from PyQt5.QtGui import QPixmap, QFont, QMovie, QColor, QKeySequence, QIcon
+from PyQt6.QtCore import Qt, QSettings, pyqtSignal, QSize, QTimer
+from PyQt6.QtGui import QPixmap, QFont, QMovie, QColor, QKeySequence, QIcon, QShortcut, QAction
 
 from ui.config_dialog import ClientSettingsDialog
 from ui.service_setup_window import ServiceSetupWindow
@@ -30,12 +30,11 @@ log = logging.getLogger("MainWindow")
 
 LOAD_LAYOUT_INDEX = 0
 STATUS_LAYOUT_INDEX = 1
-DIAGNOSTIC_LAYOUT_INDEX = 2
-ABOUT_LAYOUT_INDEX = 3
-EXIT_LAYOUT_INDEX = 4
-SERVICE_LAYOUT_INDEX = 5
-VPN_LAYOUT_INDEX = 6
-MENU_LAYOUT_INDEX = 7
+ABOUT_LAYOUT_INDEX = 2
+EXIT_LAYOUT_INDEX = 3
+SERVICE_LAYOUT_INDEX = 4
+VPN_LAYOUT_INDEX = 5
+MENU_LAYOUT_INDEX = 6
 
 class HtmlMessageDialog(QDialog):
     def __init__(self, title, html_content, img_src=None, parent=None):
@@ -54,30 +53,28 @@ class HtmlMessageDialog(QDialog):
 
         message_label = QLabel(html_content)
         message_label.setWordWrap(True) # Автоматический перенос строк
-        message_label.setTextFormat(Qt.RichText) # HTML
+        message_label.setTextFormat(Qt.TextFormat.RichText) # HTML
         layout_h.addWidget(message_label)
 
         if img_src:
             collar_man_pic = QPixmap(img_src)
-            scaled_pixmap = collar_man_pic.scaled(180, 180, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            scaled_pixmap = collar_man_pic.scaled(180, 180, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             icon_label = QLabel()
             icon_label.setPixmap(scaled_pixmap)
             icon_label.setMinimumHeight(180) # Чтобы от текста не обрезали
-            icon_label.setAlignment(Qt.AlignCenter) # Центрируем картинку
+            icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter) # Центрируем картинку
             layout_h.addWidget(icon_label)
         
         layout_v.addLayout(layout_h)
 
         ok_button = QPushButton("Хорошо")
         ok_button.clicked.connect(self.accept) # Закрывает диалог по нажатию
-        layout_v.addWidget(ok_button, alignment=Qt.AlignCenter) # Кнопка по центру
+        layout_v.addWidget(ok_button, alignment=Qt.AlignmentFlag.AlignCenter) # Кнопка по центру
 
         self.setLayout(layout_v)
 
 class MainWindow(QMainWindow):
     last_status = ["-", "-", "-", "-", "-"]
-    start_diagnostic_signal = pyqtSignal()  # Для запуска диагностики из UI (например, кнопкой "Перезапустить")
-    try_fix_network_signal = pyqtSignal()  # Для кнопки "Попробовать исправить" (только Linux)
     restart_app = None  # Функция принудительного перезапуска
     # --- VPN Сигналы ---
     request_vpn_refresh = pyqtSignal()  # Запрос на обновление списка конфигов
@@ -92,9 +89,9 @@ class MainWindow(QMainWindow):
         self.setFixedSize(910, 560) # Фиксируем
 
         if settings.value("ui/mainWindowOnTop", True, type=bool):
-            self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint) # Окно поверх других
+            self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint) # Окно поверх других
         else:
-            self.setWindowFlags(self.windowFlags() & ~Qt.WindowStaysOnTopHint) # Окно не поверх других
+            self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint) # Окно не поверх других
         
         self.DEBUG = debug
         self.log_path = log_path
@@ -110,7 +107,6 @@ class MainWindow(QMainWindow):
 
         self.init_load_layout() # Инициализируем layout запуска, он самый первый и основной
         self.init_status_layout() # Инициализируем новый layout
-        self.init_diagnostic_layout() # Экран диагностики
 
         self.init_ui() # layout "О PLACS"
         self.init_exit_layout() # Слой завершения программы
@@ -147,11 +143,11 @@ class MainWindow(QMainWindow):
         # --- Слой 0: Загрузка ---
         loading_layer = QWidget()
         loading_layout = QVBoxLayout(loading_layer)
-        loading_layout.setAlignment(Qt.AlignCenter)
+        loading_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         loading_layout.addStretch(1)
 
         self.vpn_loading_label = QLabel("<h2>Секундочку! Обновляю список...</h2>")
-        self.vpn_loading_label.setAlignment(Qt.AlignCenter)
+        self.vpn_loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.vpn_loading_label.setObjectName("VpnUpdatingLabel")
         loading_layout.addWidget(self.vpn_loading_label)
 
@@ -159,7 +155,7 @@ class MainWindow(QMainWindow):
         self.vpn_spinner_movie = QMovie("ui/media/img/anim/spinner.gif")
         self.vpn_spinner_movie.setScaledSize(QSize(200, 200))
         self.vpn_spinner_label.setMovie(self.vpn_spinner_movie)
-        self.vpn_spinner_label.setAlignment(Qt.AlignCenter)
+        self.vpn_spinner_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         loading_layout.addWidget(self.vpn_spinner_label)
         loading_layout.addStretch(1)
 
@@ -284,8 +280,8 @@ class MainWindow(QMainWindow):
             icon_label = QLabel()
             icon_pixmap = QPixmap("ui/media/img/icons_png/PLACS_ICON_NETWORK.png")
             if not icon_pixmap.isNull():
-                icon_label.setPixmap(icon_pixmap.scaled(76, 76, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            icon_label.setAlignment(Qt.AlignCenter)
+                icon_label.setPixmap(icon_pixmap.scaled(76, 76, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             item_layout.addWidget(icon_label)
 
             # Текстовая часть
@@ -358,7 +354,7 @@ class MainWindow(QMainWindow):
         load_label = QLabel("<h1>Я запускаюсь~</h1>")
         load_label.setObjectName("loadLabel") # Устанавливаем objectName для стилизации
         load_label.setWordWrap(True)
-        load_label.setAlignment(Qt.AlignCenter)
+        load_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info_blocks_layout.addWidget(load_label)
 
         # Блок "Ща те всё расскажу"
@@ -393,10 +389,10 @@ class MainWindow(QMainWindow):
         right_pane_layout = QVBoxLayout(right_pane)
 
         collar_man_pic = QPixmap(get_random_file_path("ui/media/mascot_img/start", ".png"))
-        scaled_pixmap = collar_man_pic.scaled(420, 420, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        scaled_pixmap = collar_man_pic.scaled(420, 420, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         icon_label_status = QLabel()
         icon_label_status.setPixmap(scaled_pixmap)
-        icon_label_status.setAlignment(Qt.AlignCenter) # Центрируем картинку
+        icon_label_status.setAlignment(Qt.AlignmentFlag.AlignCenter) # Центрируем картинку
         right_pane_layout.addWidget(icon_label_status)
 
         # Соединяем панели на одной подложке
@@ -425,7 +421,7 @@ class MainWindow(QMainWindow):
         self.exit_spiner = QMovie("ui/media/img/anim/spinner.gif")
         self.exit_spiner.setScaledSize(QSize(300, 300))
         spiner_label.setMovie(self.exit_spiner)
-        spiner_label.setAlignment(Qt.AlignCenter)
+        spiner_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         spiner_label.setObjectName("LeftPaneNoBG")
         bb_blocks_layout.addWidget(spiner_label)
         bb_blocks_layout.addStretch()
@@ -440,24 +436,24 @@ class MainWindow(QMainWindow):
         self.exit_label = QLabel("<h1>Отключаюсь...</h1>")
         self.exit_label.setObjectName("exitLabel") # Устанавливаем objectName для стилизации
         self.exit_label.setWordWrap(True)
-        self.exit_label.setAlignment(Qt.AlignCenter)
+        self.exit_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         right_pane_layout.addWidget(self.exit_label)
 
         # Почему агент перезапускается? Данное поле может отстутвовать
         self.exit_reason = QLabel("")
         self.exit_reason.setObjectName("exitReason") # Устанавливаем objectName для стилизации
         self.exit_reason.setWordWrap(True)
-        self.exit_reason.setAlignment(Qt.AlignCenter)
+        self.exit_reason.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         right_pane_layout.addWidget(self.exit_reason)
         right_pane_layout.addStretch(2)
 
         # Картинка
         collar_man_pic = QPixmap(get_random_file_path("ui/media/mascot_img/sleep", ".png"))
-        scaled_pixmap = collar_man_pic.scaled(420, 420, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        scaled_pixmap = collar_man_pic.scaled(420, 420, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         self.icon_label_exit = QLabel()
         self.icon_label_exit.setPixmap(scaled_pixmap)
-        self.icon_label_exit.setAlignment(Qt.AlignCenter) # Центрируем картинку
+        self.icon_label_exit.setAlignment(Qt.AlignmentFlag.AlignCenter) # Центрируем картинку
         right_pane_layout.addWidget(self.icon_label_exit)
         right_pane_layout.addStretch()
 
@@ -471,104 +467,6 @@ class MainWindow(QMainWindow):
         # Добавляем новый виджет в QStackedWidget
         self.stacked_widget.addWidget(exit_widget)
     
-    def init_diagnostic_layout(self):
-        """Инициализирует UI для экрана диагностики сети."""
-        diagnostic_widget = QWidget()
-        layout = QVBoxLayout(diagnostic_widget)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
-
-        # 1. Заголовок
-        name_and_icon_layout = QHBoxLayout()
-        name_and_icon_layout.addStretch()
-        header_label = QLabel("<h4>Диагностика сетевых проблем!</h4>")
-        header_label.setAlignment(Qt.AlignCenter)
-        header_label.setObjectName("DiagnosticHeader")
-        name_and_icon_layout.addWidget(header_label)
-        
-        try:
-            pixmap = QPixmap("ui/media/img/colar_man/TROUBLE_COLLAR_MAN.png")
-            if pixmap.isNull():
-                log.error(f"Не удалось загрузить проблемное изображение.")
-                image_label = QLabel("⚠️ Изображение не найдено")
-            else:
-                image_label = QLabel()
-                # Масштабируем картинку, сохраняя пропорции, до разумного размера
-                scaled_pixmap = pixmap.scaled(130, 130, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                image_label.setPixmap(scaled_pixmap)
-                image_label.setAlignment(Qt.AlignCenter)
-                image_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed) # Фиксированный размер для картинки
-
-            image_label.setObjectName("DiagnosticImage")
-            name_and_icon_layout.addWidget(image_label, alignment=Qt.AlignCenter)
-
-        except Exception as e:
-            log.exception(f"Error loading diagnostic image: {e}")
-            image_label = QLabel("⚠️ Ошибка загрузки изображения")
-            image_label.setObjectName("DiagnosticImage")
-            name_and_icon_layout.addWidget(image_label, alignment=Qt.AlignCenter)
-        
-        name_and_icon_widget = QWidget()
-        name_and_icon_widget.setLayout(name_and_icon_layout)
-        name_and_icon_widget.setObjectName("DiagnosticNaleAndLable")
-        
-        layout.addWidget(name_and_icon_widget)
-
-        # 3. Что я проверяю?
-        info_label = QLabel("Проверяю доступность сервера PLACS Agent и общую сетевую связность.")
-        info_label.setAlignment(Qt.AlignCenter)
-        info_label.setWordWrap(True)
-        info_label.setObjectName("DiagnosticInfoLabel")
-        layout.addWidget(info_label)
-
-        # 4. Список проверок (динамически обновляемый)
-        self.checklist_label = QLabel("Загрузка списка проверок...")
-        self.checklist_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        self.checklist_label.setObjectName("DiagnosticChecklist")
-        self.checklist_label.setFont(QFont("Monospace", 10)) # Фиксированная ширина шрифта для смайликов
-        layout.addWidget(self.checklist_label)
-        
-        # 5. Результат последней проверки подробнее
-        detail_header_label = QLabel("<h5>Подробный результат проверки:</h5>")
-        detail_header_label.setObjectName("DiagnosticDetailHeader")
-        layout.addWidget(detail_header_label)
-
-        self.detail_output_text = QTextEdit()
-        self.detail_output_text.setReadOnly(True)
-        self.detail_output_text.setObjectName("DiagnosticDetailOutput")
-        self.detail_output_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding) # Расширяется по вертикали
-        layout.addWidget(self.detail_output_text)
-
-        # Кнопки управления
-        button_layout = QHBoxLayout()
-        button_layout.setSpacing(10)
-
-        # Кнопка "Попробовать исправить" (только для Linux)
-        if is_linux():
-            self.fix_button = QPushButton("Попробовать исправить")
-            self.fix_button.setObjectName("FixButton")
-            self.fix_button.clicked.connect(self.try_fix_network_signal.emit)
-            button_layout.addWidget(self.fix_button)
-        else:
-            self.fix_button = None # Устанавливаем в None, если не создана
-
-        self.restart_diagnostic_button = QPushButton("Перезапустить диагностику")
-        self.restart_diagnostic_button.setObjectName("RestartDiagnosticButton")
-        self.restart_diagnostic_button.clicked.connect(self.start_diagnostic_signal.emit)
-        button_layout.addWidget(self.restart_diagnostic_button)
-
-        self.back_button = QPushButton("Вернуться в меню")
-        self.back_button.setObjectName("BackButton")
-        self.back_button.clicked.connect(lambda: self.switch_to_main_status_layout())
-        button_layout.addWidget(self.back_button)
-
-        layout.addLayout(button_layout)
-        
-        self.diagnostic_check_items = [] # Список для хранения пар (название, статус-эмодзи)
-        self._update_diagnostic_checklist_display() # Инициализируем пустой список
-
-        self.stacked_widget.addWidget(diagnostic_widget)
-
     def init_status_layout(self):
         """
         Инициализирует и компонует виджет статуса с чётким разделением
@@ -618,7 +516,7 @@ class MainWindow(QMainWindow):
         # Текст на правой панельке
         hello_label = QLabel(f"<h1>Привет, {get_username()}!</h1>")
         hello_label.setWordWrap(True)
-        hello_label.setAlignment(Qt.AlignCenter)
+        hello_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         right_pane_layout.addWidget(hello_label)
         #Небольшой промежуток после текста, чтобы он прилип к верху
         right_pane_layout.addStretch()
@@ -626,9 +524,9 @@ class MainWindow(QMainWindow):
         self.icon_label_status = QLabel()
         collar_man_pic = QPixmap(get_random_file_path("ui/media/mascot_img/unhappy", ".png"))
         scaled_pixmap = collar_man_pic.scaled(420, 420, 
-                                              Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                                              Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         self.icon_label_status.setPixmap(scaled_pixmap)
-        self.icon_label_status.setAlignment(Qt.AlignCenter)
+        self.icon_label_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         right_pane_layout.addWidget(self.icon_label_status)
         # Небольшой промежуток после картинки, чтобы не упала
         right_pane_layout.addStretch()
@@ -636,7 +534,7 @@ class MainWindow(QMainWindow):
         # 4.  Версия агента
         from core.ver import __version__, __assets_packet_version__
         indicator = QLabel(f"<p style=\"font-weight: normal;margin: 3px;font-size: 11px;color: #cfcfcf;\">Agent v{__version__} | Assets v{__assets_packet_version__} | {'Сервисный' if self.DEBUG else 'Стандартный'}</p>")
-        indicator.setAlignment(Qt.AlignRight)
+        indicator.setAlignment(Qt.AlignmentFlag.AlignRight)
         right_pane_layout.addWidget(indicator)
 
         # 5. Собираем всё в главном layout'е
@@ -667,7 +565,7 @@ class MainWindow(QMainWindow):
         # Добавляем небольшой промежуток и картинку
         layout_v.addStretch()
         rbdz_pic = QPixmap("ui/media/img/rcn_placs_logo.png")
-        scaled_pixmap = rbdz_pic.scaled(320, 320, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        scaled_pixmap = rbdz_pic.scaled(320, 320, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         icon_label = QLabel()
         icon_label.setPixmap(scaled_pixmap)
         layout_v.addWidget(icon_label)
@@ -734,7 +632,7 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(about_layout)
         
         self.status_label = QLabel('<h3 style="margin-bottom: 2px;">Статус агента:</h3> Запущен и работает в фоне...')
-        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setStyleSheet("background-color: #af604c; padding: 3px; border-radius: 8px; min-height: 30px;")
         main_layout.addWidget(self.status_label)
 
@@ -769,21 +667,21 @@ class MainWindow(QMainWindow):
         """Создает страницу с предупреждением."""
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setAlignment(Qt.AlignCenter)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         achtung_label = QLabel("<p style='color: #ff3333;font-size: 28px;'>Стоять!<br>Не пущу - если не прочитаешь...</p>")
-        achtung_label.setAlignment(Qt.AlignCenter)
+        achtung_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(achtung_label)
 
         image_label = QLabel()
         pixmap = QPixmap("ui/media/mascot_img/manager/MANAGER_POINTING.png")
         if not pixmap.isNull():
-            image_label.setPixmap(pixmap.scaled(250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        image_label.setAlignment(Qt.AlignCenter)
+            image_label.setPixmap(pixmap.scaled(250, 250, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(image_label)
 
         warning_label = QLabel("<p style='color: #ff6666;font-size: 14px;'>Ты переходишь к функционалу, который может инвазивно влиять на работу Сабика!<br>Если не уверен, что готов к этому, просто выйди отсюда</p>")
-        warning_label.setAlignment(Qt.AlignCenter)
+        warning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         warning_label.setWordWrap(True)
         layout.addWidget(warning_label)
 
@@ -807,7 +705,7 @@ class MainWindow(QMainWindow):
         # Левая панель
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setAlignment(Qt.AlignTop)
+        left_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         where_iam = QLabel("<h3>Дневники и дороги...</h3>")
         where_iam.setWordWrap(True)
@@ -897,18 +795,18 @@ class MainWindow(QMainWindow):
                 </div>
                 """
             )
-            dialod.exec_()
+            dialod.exec()
 
-        reply = QMessageBox.question(self, 'Подтверждение', f"Вы уверены, что хотите {action_text} режим отладки? Агент будет перезапущен.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if reply == QMessageBox.Yes:
+        reply = QMessageBox.question(self, 'Подтверждение', f"Вы уверены, что хотите {action_text} режим отладки? Агент будет перезапущен.", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
             log.info(f"Пользователь {action_text} Debug режим. Перезапуск...")
             set_debug_state(not self.DEBUG)
             self.restart_app(True, "Применение конфигурации отладки")
 
     def handle_clear_logs(self):
         """Обрабатывает нажатие кнопки очистки логов."""
-        reply = QMessageBox.question(self, 'Подтверждение', "Вы уверены, что хотите удалить ВСЕ логи? Текущий лог сессии будет пропущен.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if reply == QMessageBox.Yes:
+        reply = QMessageBox.question(self, 'Подтверждение', "Вы уверены, что хотите удалить ВСЕ логи? Текущий лог сессии будет пропущен.", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
             log.info("Запрос на полную очистку журнала.")
             self.log_list_widget.clear()
             self.log_list_widget.addItem("Обработка...")
@@ -942,7 +840,7 @@ class MainWindow(QMainWindow):
         for filename, _, size in log_files:
             display_name = self.parse_log_filename(filename)
             item = QListWidgetItem(display_name)
-            item.setData(Qt.UserRole, filename)
+            item.setData(Qt.ItemDataRole.UserRole, filename)
             if filename == current_log_file:
                 item.setBackground(QColor("#242424"))
                 item.setText(f"▶ {display_name} (Текущая сессия)")
@@ -964,7 +862,7 @@ class MainWindow(QMainWindow):
     def display_log_content(self, current_item):
         """Отображает содержимое выбранного лога."""
         if not current_item: return
-        filename = current_item.data(Qt.UserRole)
+        filename = current_item.data(Qt.ItemDataRole.UserRole)
         file_path = os.path.join(LOG_FOLDER, filename)
         self.log_content_view.setText(f"Обработка лога {filename}...")
         QApplication.processEvents()
@@ -1035,9 +933,6 @@ class MainWindow(QMainWindow):
         elif index == STATUS_LAYOUT_INDEX:
             self.setWindowTitle("PLACS Agent - Состояние Вашего Сабика!")
 
-        elif index == DIAGNOSTIC_LAYOUT_INDEX:
-            self.setWindowTitle("PLACS Agent - Диагностика сети")
-
         elif index == ABOUT_LAYOUT_INDEX:
             self.setWindowTitle("PLACS Agent - Что такое PLACS и зачем он тебе")
 
@@ -1106,116 +1001,6 @@ class MainWindow(QMainWindow):
         button.setText(original_text)
         button.setToolTip("Отправить журнал работы на сервер")
 
-    def switch_to_diagnostic_layout_and_start(self):
-        """
-        Переключает на экран диагностики и сигнализирует о начале проверки.
-        Вызывается ErrorStateManager'ом.
-        """
-        log.info("Переключение на экран диагностики.")
-        self.stacked_widget.setCurrentIndex(2) # Индекс 1 для диагностического виджета
-        self.detail_output_text.clear() # Очищаем старые результаты
-        self.diagnostic_check_items = [] # Очищаем список проверок
-        self._update_diagnostic_checklist_display() # Обновляем, чтобы было пусто
-        
-        # Сразу начинаем диагностику, чтобы пользователь не ждал ручного старта
-        self.start_diagnostic_signal.emit()
-        
-        # Деактивируем кнопки во время диагностики
-        self.restart_diagnostic_button.setEnabled(False)
-        self.back_button.setEnabled(False)
-        self.toolbar.hide()
-        if self.fix_button:
-            self.fix_button.setEnabled(False)
-
-    def switch_to_main_status_layout(self):
-        """Переключает обратно на основной экран статуса."""
-        log.info("Переключение на основной экран статуса.")
-        self.stacked_widget.setCurrentIndex(MENU_LAYOUT_INDEX)
-
-    def update_diagnostic_checklist(self, check_name: str, status_emoji: str):
-        """
-        Обновляет список проверок (эмодзи) в UI.
-        Вызывается NetworkDiagnoser.
-        """
-        # Если проверка уже есть, обновляем ее, иначе добавляем
-        found = False
-        for i, (name, _) in enumerate(self.diagnostic_check_items):
-            if name == check_name:
-                self.diagnostic_check_items[i] = (check_name, status_emoji)
-                found = True
-                break
-        if not found:
-            self.diagnostic_check_items.append((check_name, status_emoji))
-        
-        self._update_diagnostic_checklist_display()
-
-    def _update_diagnostic_checklist_display(self):
-        """Внутренний метод для отрисовки списка проверок."""
-        display_text = ""
-        if not self.diagnostic_check_items:
-            display_text = "<i>Ожидание начала проверки...</i>"
-        else:
-            temp_diagnostic_check_items = self.diagnostic_check_items.copy()
-            temp_diagnostic_check_items.reverse()
-            for name, emoji in temp_diagnostic_check_items:
-                display_text += f"{emoji} {name}\n"
-        self.checklist_label.setText(display_text)
-
-    def append_diagnostic_details(self, detail_text: str):
-        """
-        Добавляет подробный текст в поле результатов.
-        Вызывается NetworkDiagnoser.
-        """
-        self.detail_output_text.append(detail_text)
-
-    def handle_diagnostic_finish(self, overall_success: bool, message: str):
-        """
-        Обрабатывает завершение диагностики.
-        Вызывается NetworkDiagnoser.
-        """
-        settings = QSettings("PLACS", "Agent")
-
-        log.info(f"Диагностика завершена: Успех={overall_success}, Сообщение='{message}'")
-        self.append_diagnostic_details(f"\n{message}\n")
-
-        if settings.value("diag/reportInPopup", True, type=bool):
-            if not overall_success:
-                dialog = HtmlMessageDialog(
-                    "Результат проверки: Проблема с сетью!",
-                    message,
-                    "ui/media/img/colar_man/UNHAPPY_COLLAR_MAN.png",
-                    self
-                )
-            
-            else:
-                dialog = HtmlMessageDialog(
-                    "Результат проверки: Сеть исправна!",
-                    message,
-                    "ui/media/img/colar_man/SILLY_COLLAR_MAN.png",
-                    self
-                )
-        
-            dialog.exec_()
-
-        if settings.value("diag/autoRecoveryNetwork", False, type=bool):
-            self.try_fix_network_signal.emit()
-        
-        # Активируем кнопки после завершения диагностики
-        self.restart_diagnostic_button.setEnabled(True)
-        self.back_button.setEnabled(True)
-        self.toolbar.show()
-        if self.fix_button:
-            self.fix_button.setEnabled(True)
-    
-    def run_network_diagnostic(self):
-        """
-        Слот, вызываемый ErrorStateManager, когда сетевая ошибка длится слишком долго.
-        Здесь будет логика запуска диагностики.
-        """
-        log.warning("Получен сигнал: СЕТЕВАЯ ОШИБКА ДЛИТСЯ СЛИШКОМ ДОЛГО. ЗАПУСКАЮ ДИАГНОСТИКУ!")
-        
-        self.switch_to_diagnostic_layout_and_start()
-
     def update_status(self, message):
         """Метод для обновления статуса в окне."""
         message = message if len(message) < 70 else message[:70]
@@ -1253,7 +1038,7 @@ class MainWindow(QMainWindow):
     def update_client_config(self):
         self.hide()
         dialog = ClientSettingsDialog()
-        dialog_end = dialog.exec_()
+        dialog_end = dialog.exec()
         if dialog_end == ClientSettingsDialog.SettingsSaved:
             log.warning("Клиент сохранил конфигурацию!")
         
@@ -1335,16 +1120,13 @@ class MainWindow(QMainWindow):
 
         # Обновляем изображение
         if collar_man_pic: # Проверка, что картинка загрузилась
-            scaled_pixmap = collar_man_pic.scaled(420, 420, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            scaled_pixmap = collar_man_pic.scaled(420, 420, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             self.icon_label_status.setPixmap(scaled_pixmap)
         
         if self.stacked_widget.currentIndex() == EXIT_LAYOUT_INDEX:
             pass
 
         elif self.stacked_widget.currentIndex() == ABOUT_LAYOUT_INDEX and state not in (ErrorState.NETWORK, ErrorState.CRITICAL):
-            self.switch_layout(MENU_LAYOUT_INDEX)
-        
-        elif self.stacked_widget.currentIndex() == DIAGNOSTIC_LAYOUT_INDEX and state in (ErrorState.OK, ErrorState.WARNING):
             self.switch_layout(MENU_LAYOUT_INDEX)
         
         elif self.stacked_widget.currentIndex() == LOAD_LAYOUT_INDEX:
@@ -1391,7 +1173,7 @@ class MainWindow(QMainWindow):
 
         header = QLabel("<h1>Меню PLACS</h1><p>Выберите нужное действие.</p>")
         header.setObjectName("MainMenuHeader")
-        header.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        header.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         header.setWordWrap(True)
         root_layout.addWidget(header)
 
@@ -1402,7 +1184,7 @@ class MainWindow(QMainWindow):
         actions = [
             ("Статус", "ui/media/img/icons_png/PLACS_ICON_AHTUNG.png", lambda: self.switch_layout(STATUS_LAYOUT_INDEX), "MainMenuActionButtonPriority"),
             ("VPN сети", "ui/media/img/icons_png/PLACS_ICON_VPN.png", self.show_vpn_layout, "MainMenuActionButtonPriority"),
-            ("Диагностика сети", "ui/media/img/icons_png/PLACS_ICON_NETWORK_CHEK.png", self.switch_to_diagnostic_layout_and_start, "MainMenuActionButton"),
+            ("Ведутся работы...", "ui/media/img/icons_png/PLACS_ICON_NEXT.png", None, "MainMenuActionButton"),
             ("Отправить логи", "ui/media/img/icons_png/PLACS_ICON_SENDLOG.png", self.handle_toolbar_send_log, "MainMenuActionButton"),
             ("Настройки", "ui/media/img/icons_png/PLACS_ICON_SETTINGS.png", self.update_client_config, "MainMenuActionButton"),
             ("Перезапуск", "ui/media/img/icons_png/PLACS_ICON_RESTART.png", lambda: self.restart_app(True, "Требование пользователя."), "MainMenuActionButton"),
@@ -1431,12 +1213,16 @@ class MainWindow(QMainWindow):
     def create_menu_action_button(self, title, icon_path, handler, object_name):
         button = QPushButton(title)
         button.setObjectName(object_name)
-        button.setCursor(Qt.PointingHandCursor)
         button.setIcon(QIcon(icon_path))
         button.setIconSize(QSize(64, 64))
         button.setMinimumHeight(88)
-        button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        button.clicked.connect(handler)
+        button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        if handler is not None:
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.clicked.connect(handler)
+        else:
+            button.setEnabled(False)
+            button.setToolTip("Этот функционал появится в следующем обновлении")
         return button
 
     def handle_display_message(self, message, duration=5):
@@ -1460,12 +1246,12 @@ class MainWindow(QMainWindow):
 
         # Обновляем картинку
         collar_man_pic = QPixmap(get_random_file_path("ui/media/mascot_img/sleep", ".png"))
-        scaled_pixmap = collar_man_pic.scaled(420, 420, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        scaled_pixmap = collar_man_pic.scaled(420, 420, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         self.icon_label_exit.setPixmap(scaled_pixmap)
 
         self.repaint() # Перерисовать окно немедленно
         QApplication.processEvents() # Обработать все ожидающие события UI (включая отрисовку)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint) # Окно поверх других
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint) # Окно поверх других
         self.show()
         
     def _confirm_and_connect(self, network_name: str):
@@ -1495,14 +1281,14 @@ class MainWindow(QMainWindow):
         self._approval_dialog_open = True
         dialog = QMessageBox(self)
         dialog.setWindowTitle(request.title)
-        dialog.setTextFormat(Qt.RichText)
+        dialog.setTextFormat(Qt.TextFormat.RichText)
         dialog.setText(request.to_html())
         dialog.setIcon(QMessageBox.Question)
         allow_button = dialog.addButton("Разрешить", QMessageBox.YesRole)
         deny_button = dialog.addButton("Не сейчас", QMessageBox.NoRole)
         dialog.setDefaultButton(allow_button)
-        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowStaysOnTopHint) # Всегда поверх других окон
-        dialog.exec_()
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.WindowStaysOnTopHint) # Всегда поверх других окон
+        dialog.exec()
 
         request.approved = dialog.clickedButton() == allow_button
         request.event.set()
@@ -1510,12 +1296,12 @@ class MainWindow(QMainWindow):
 
     def show_service_setup_window(self, retry_mode=False):
         dialog = ServiceSetupWindow(retry_mode=retry_mode, parent=self)
-        return dialog.exec_(), dialog.accepted_setup
+        return dialog.exec(), dialog.accepted_setup
 
     def update_client_config(self):
         self.hide()
         dialog = ClientSettingsDialog()
-        dialog_end = dialog.exec_()
+        dialog_end = dialog.exec()
         if dialog_end == ClientSettingsDialog.SettingsSaved:
             log.warning("Клиент сохранил конфигурацию!")
         elif dialog_end == ClientSettingsDialog.RestartRequired:

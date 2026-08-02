@@ -15,8 +15,9 @@ from core.windows_service_manager import (
     SERVICE_HOST,
     SERVICE_NAME,
     SERVICE_PORT,
-    get_or_create_service_token,
 )
+
+from core.config_manager import get_or_create_service_token
 
 CREATE_NO_WINDOW = 0x08000000
 DETACHED_PROCESS = 0x00000008
