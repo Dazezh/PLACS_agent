@@ -17,7 +17,7 @@ skinparam titleFontName "Arial"
 skinparam titleFontSize 22
 skinparam titleFontColor #242424
 
-skinparam linetype ortho
+' skinparam linetype ortho
 skinparam nodesep 45
 skinparam ranksep 55
 

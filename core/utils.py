@@ -162,13 +162,13 @@ def get_os_string():
 
 
 def apply_update_script_update():
-    """Проверяет наличие обновления скрипта обновления в папке update_update_script/
+    """Проверяет наличие обновления скрипта обновления в папке ui/update_update_script/
     и, если оно есть, заменяет текущий исполняемый файл новым, после чего удаляет папку.
 
     Returns:
         bool: True, если обновление было применено, иначе False.
     """
-    UPDATE_DIR = "update_update_script"
+    UPDATE_DIR = "ui/update_update_script"
     SCRIPT_NAME = "update_placs.exe" if is_windows() else "update_placs"
 
     new_script_path = os.path.join(UPDATE_DIR, SCRIPT_NAME)

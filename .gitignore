@@ -30,3 +30,4 @@ logs/
 # --- Конфигурационные файлы ---
 agent_config.json
 .admin_service_token
+core/constant.py
